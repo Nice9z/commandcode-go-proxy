@@ -44,9 +44,11 @@ Notes:
     MAXeaglet/commandcode-proxy). ToS risk is on you; personal Go traffic only.
 
 Privacy / data flow (what leaves your machine):
-  - To the upstream: ONLY the translated chat envelope (your prompt text -
-    unavoidable, it is the service) plus headers. No file paths, no hostname,
-    no real device info, no client IP, no client headers.
+  - To the upstream: the translated chat envelope (your prompt text -
+    unavoidable) plus headers. The device context is a DETERMINISTIC FAKE
+    (stable fake project dir / git shape per key, burner-device style):
+    realistic traffic shape without ever sending your real paths, hostname,
+    device info, client IP or client headers.
   - Session id = UUID5(SHA-256(upstream key), 12h bucket + deterministic
     jitter). Never derived from message content; stable like the CLI's own
     long-lived session, unlinkable across buckets.
@@ -182,20 +184,57 @@ def _user_parts(content):
     return parts or [{"type": "text", "text": ""}]
 
 
+def _keyhash16(auth_header):
+    return hashlib.sha256((auth_header or "").encode()).hexdigest()[:16]
+
+
+_FP_USERS = ["dev", "alex", "chen", "marcus", "wei", "dmitri"]
+_FP_SLUGS = ["app", "api-server", "web-client", "cli-tools", "billing-worker"]
+_FP_BRANCHES = ["main", "master", "develop", "feat/api-v2"]
+
+
+def _device_profile(auth_header):
+    """Deterministic fake project context, stable per upstream key.
+
+    A real CLI sends a populated config envelope (project dir, git state).
+    Sending empty fields forever is itself an outlier signal, and sending the
+    REAL machine is a privacy leak - so we fabricate one consistent "normal
+    Windows dev machine" per key: same account always sees the same device,
+    nothing about the actual host ever leaves the machine."""
+    kh = _keyhash16(auth_header)
+
+    def pick(field, items):
+        h = hashlib.sha256(("%s\0%s" % (kh, field)).encode()).hexdigest()
+        return items[int(h[:8], 16) % len(items)]
+
+    user = pick("user", _FP_USERS)
+    slug = pick("slug", _FP_SLUGS)
+    branch = pick("branch", _FP_BRANCHES)
+    return {
+        "workingDir": "C:\\Users\\%s\\projects\\%s" % (user, slug),
+        "isGitRepo": True,
+        "currentBranch": branch,
+        "mainBranch": "main",
+        "gitStatus": "",
+        "structure": [],
+        "recentCommits": [],
+    }
+
+
 def _session_for(auth_header):
     """Stable session id per upstream key, rotating every 12h (+jitter).
     Mirrors the official CLI (one device = one long-lived session); deriving
     from the key - never from message content - keeps conversations unlinkable
     across sessions and survives restarts."""
-    keyhash = hashlib.sha256((auth_header or "").encode()).hexdigest()[:16]
+    keyhash = _keyhash16(auth_header)
     jitter = int(hashlib.sha256(("jitter:" + keyhash).encode()).hexdigest()[:8], 16) % 3600
     bucket = int((time.time() + jitter) // SESSION_TTL_S)
     return str(uuid.uuid5(uuid.NAMESPACE_URL,
                           "cc-go-gateway:%s:%d" % (keyhash, bucket)))
 
 
-def translate_body(openai_body):
-    """OpenAI chat body -> envelope (no session here; see _session_for)."""
+def translate_body(openai_body, auth_header=""):
+    """OpenAI chat body -> envelope (device context faked from the key)."""
     system_parts, msgs, tool_names = [], [], {}
     pending_tool_results = []
 
@@ -261,11 +300,10 @@ def translate_body(openai_body):
     if openai_body.get("top_p") is not None:
         params["top_p"] = openai_body["top_p"]
 
+    profile = _device_profile(auth_header)
     envelope = {
-        "config": {"workingDir": "", "date": time.strftime("%Y-%m-%d"),
-                   "environment": "production", "structure": [],
-                   "isGitRepo": False, "currentBranch": "",
-                   "mainBranch": "main", "gitStatus": "", "recentCommits": []},
+        "config": {**profile, "date": time.strftime("%Y-%m-%d"),
+                   "environment": "production"},
         "memory": "", "taste": None, "skills": None,
         "permissionMode": "standard", "params": params,
     }
@@ -358,7 +396,7 @@ def _status_from_error(err):
 
 def run_generate(openai_body, auth_header):
     """Yield ('text'|'reasoning', s) | ('tool_start', {..}) | ('done', {..})"""
-    envelope = translate_body(openai_body)
+    envelope = translate_body(openai_body, auth_header)
     usage, finish, cost = None, None, None
     toolcalls, tindex = {}, -1
     session = _session_for(auth_header)
