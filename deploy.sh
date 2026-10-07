@@ -18,6 +18,24 @@ RAW_BASES=(
 
 [ "$(id -u)" = "0" ] || { echo "请用 root 运行 (sudo bash)"; exit 1; }
 
+# 重跑本脚本 = 升级: 保留 /etc 配置, 只更新 proxy.py 并重启
+if [ "$1" = "update" ]; then
+  echo "[*] 更新 proxy.py..."
+  OK=""
+  for base in "${RAW_BASES[@]}"; do
+    if curl -fsSL --max-time 60 -o /tmp/cc-proxy-new.py "$base/proxy.py?v=$(date +%s)" \
+       && grep -q "alpha/generate" /tmp/cc-proxy-new.py; then
+      mv /tmp/cc-proxy-new.py "$INSTALL_DIR/proxy.py"; OK=1; break
+    fi
+  done
+  [ -n "$OK" ] || { echo "下载失败"; exit 1; }
+  systemctl restart "$APP"
+  sleep 2
+  systemctl is-active --quiet "$APP" && echo "[OK] 已更新并重启" || { journalctl -u "$APP" -n 20 --no-pager; exit 1; }
+  curl -s "http://127.0.0.1:${CMD_CODE_PORT:-18787}/healthz" | head -c 200; echo ""
+  exit 0
+fi
+
 ask() { read -r -p "$1" "$2" < /dev/tty; }
 token_ok() { case "$1" in user_*) return 0 ;; *) return 1 ;; esac; }
 

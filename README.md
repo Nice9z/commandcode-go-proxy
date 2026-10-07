@@ -39,6 +39,16 @@ CMD_CODE_TOKEN=user_xxx CMD_CODE_KEY=强随机密码 CMD_CODE_HOST=0.0.0.0 pytho
 
 客户端接入：Base URL `http://<host>:18787/v1`，API Key 填 `CMD_CODE_KEY`（或直接传 `user_*` token，直通模式）。
 
+## 更新
+
+脚本持续迭代，VPS 上升级只需一条命令（保留你的 token/网关 key 配置，只替换程序并重启）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Nice9z/commandcode-go-proxy/main/deploy.sh | bash -s -- update
+```
+
+或重新完整跑一遍 `deploy.sh`（会保留 `/etc/cc-go-proxy.env` 里的配置重新写入）。
+
 ## 环境变量
 
 | 变量 | 默认 | 说明 |

@@ -541,7 +541,8 @@ class Recorder:
                 c.commit()
                 c.close()
         except sqlite3.Error as e:
-            log("recorder error:", _redact(str(e)))
+            # loud: a silent DB failure = empty dashboard with a "working" proxy
+            log("!! RECORDER WRITE FAILED:", _redact(str(e)), "| db:", DB_PATH)
 
     @staticmethod
     def _since(rng):
@@ -849,11 +850,18 @@ class Handler(BaseHTTPRequestHandler):
                     {"id": m, "object": "model", "created": now,
                      "owned_by": "command-code"} for m in MODELS]})
             else:
+                db_ok = True
+                try:
+                    _c = REC._conn()
+                    _c.execute("SELECT 1 FROM usage LIMIT 1")
+                    _c.close()
+                except sqlite3.Error:
+                    db_ok = False
                 self._json(200, {"ok": True, "upstream": UPSTREAM,
                                  "version_header": VERSION,
                                  "token_set": bool(TOKEN),
                                  "gateway_key_required": bool(PROXY_KEY),
-                                 "db": DB_PATH})
+                                 "db": DB_PATH, "db_writable": db_ok})
         else:
             self._json(404, {"error": {"message": "not found: " + p}})
 
@@ -1054,7 +1062,19 @@ if __name__ == "__main__":
         os.chmod(DB_PATH, 0o600)
     except OSError:
         pass
-    REC._conn().close()  # fail fast if DB path is not writable
+    try:
+        _c = REC._conn()
+        _c.execute("INSERT INTO usage (ts, model, status) VALUES (?, 'startup-probe', 0)",
+                   (time.time(),))
+        _c.commit()
+        _c.execute("DELETE FROM usage WHERE model='startup-probe'")
+        _c.commit()
+        _c.close()
+        log("db write probe OK:", DB_PATH)
+    except sqlite3.Error as e:
+        log("!! DB NOT WRITABLE:", DB_PATH, "|", e)
+        log("!! usage dashboard will stay EMPTY. Fix permissions or set CMD_CODE_DB.")
+        sys.exit(1)
     if HOST == "0.0.0.0" and not PROXY_KEY:
         log("WARNING: binding 0.0.0.0 without CMD_CODE_KEY - the gateway is "
             "OPEN. Set CMD_CODE_KEY before exposing to the internet.")
