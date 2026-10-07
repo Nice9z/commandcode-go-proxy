@@ -545,14 +545,19 @@ class Recorder:
 
     @staticmethod
     def _since(rng):
+        lt = time.localtime()
         if rng == "today":
-            lt = time.localtime()
             return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday,
                                 0, 0, 0, 0, 0, -1))
         if rng == "24h":
             return time.time() - 86400
         if rng == "7d":
             return time.time() - 7 * 86400
+        if rng == "month":
+            return time.mktime((lt.tm_year, lt.tm_mon, 1, 0, 0, 0, 0, 0, -1))
+        if rng == "lastmonth":
+            y, m = (lt.tm_year - 1, 12) if lt.tm_mon == 1 else (lt.tm_year, lt.tm_mon - 1)
+            return time.mktime((y, m, 1, 0, 0, 0, 0, 0, -1))
         return 0
 
     def stats(self, rng="all"):
@@ -663,13 +668,29 @@ text-overflow:ellipsis;white-space:nowrap}
 .muted{color:var(--muted)}
 .foot{margin-top:16px;color:var(--muted);font-size:12px}
 code{background:#1a2029;border-radius:4px;padding:1px 6px;font-size:12px}
+.gh{color:var(--muted);display:inline-flex;margin-left:auto}
+.gh:hover{color:var(--fg)}
 </style></head><body>
 <h1><span class="dot" id="dot"></span>Command Code 网关看板
-<span class="muted" style="font-size:12px" id="sub"></span></h1>
+<span class="muted" style="font-size:12px" id="sub"></span>
+<a class="gh" href="https://github.com/Nice9z/commandcode-go-proxy"
+   target="_blank" rel="noopener" title="GitHub 仓库">
+<svg viewBox="0 0 16 16" width="22" height="22" fill="currentColor"
+     aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47
+     7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-
+     .09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.
+     72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95
+     0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18
+     1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08
+     2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54
+     1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16
+     8c0-4.42-3.58-8-8-8Z"/></svg></a></h1>
 <div class="bar">
   <button data-r="today">今天</button>
   <button data-r="24h">24小时</button>
   <button data-r="7d">7天</button>
+  <button data-r="month">本月</button>
+  <button data-r="lastmonth">上月</button>
   <button data-r="all" class="on">全部</button>
   <label><input type="checkbox" id="auto" checked> 自动刷新(5s)</label>
   <span class="muted" id="upd"></span>
@@ -812,7 +833,8 @@ class Handler(BaseHTTPRequestHandler):
                     urllib.parse.urlparse(self.path).query).get(
                     "range", ["all"])[0]
                 self._json(200, REC.stats(
-                    rng if rng in ("today", "24h", "7d", "all") else "all"))
+                    rng if rng in ("today", "24h", "7d", "month",
+                                   "lastmonth", "all") else "all"))
             elif p == "/api/recent":
                 try:
                     lim = int(urllib.parse.parse_qs(
