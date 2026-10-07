@@ -24,11 +24,11 @@ python proxy.py
 ```
 
 ```bash
-# VPS 交互式部署（推荐，Ubuntu/Debian，systemd 自启 + 冒烟验证）
-# 把 proxy.py 和 deploy.sh 传上去后:
-bash deploy.sh
+# VPS 一键部署（Ubuntu/Debian，无需 clone，systemd 自启 + 冒烟验证）:
+curl -fsSL https://raw.githubusercontent.com/Nice9z/commandcode-go-proxy/main/deploy.sh | bash
 # 脚本依次要你输入: user_ token（手动粘贴）→ 网关 key（回车自动生成）
 # → 端口（回车 18787）→ 默认模型（回车 GLM-5.3 Flash），其余全自动
+# 国内网络下载慢会自动走 ghfast.top 镜像
 ```
 
 手动方式（任何 Linux）：
