@@ -33,6 +33,7 @@ Env:
   CMD_CODE_HOST   listen host (default 127.0.0.1; use 0.0.0.0 on a VPS)
   CMD_CODE_DB     sqlite path (default cc_proxy_usage.db next to script)
   CMD_CODE_PROJECT_SLUG  x-project-slug header (default cc-proxy)
+  CMD_CODE_DEFAULT_MODEL model when client sends none (default z-ai/glm-5.3-flash)
   CMD_CODE_UPSTREAM_RETRY_MAX    transparent pre-first-byte retries (default 2)
   CMD_CODE_MAX_INFLIGHT          global concurrency cap (default 4; 0=off)
 
@@ -93,6 +94,8 @@ PROXY_KEY = os.environ.get("CMD_CODE_KEY", "").strip()
 # Bump only after re-aligning the envelope from the CLI bundle.
 VERSION = os.environ.get("CMD_CODE_VERSION", "1.53.1")
 PROJECT_SLUG = os.environ.get("CMD_CODE_PROJECT_SLUG", "cc-proxy")
+# model used when the client does not specify one (Go-plan default)
+DEFAULT_MODEL = os.environ.get("CMD_CODE_DEFAULT_MODEL", "z-ai/glm-5.3-flash")
 HOST = os.environ.get("CMD_CODE_HOST", "127.0.0.1")
 PORT = int(os.environ.get("CMD_CODE_PORT", "18787"))
 DB_PATH = os.environ.get("CMD_CODE_DB") or os.path.join(
@@ -111,9 +114,11 @@ HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
        "content-length", "accept-encoding", "authorization"}
 
 MODELS = [
+    # default (Go-plan daily driver)
+    "z-ai/glm-5.3-flash",
     # free
-    "poolside/laguna-s-2.1-free", "meituan/LongCat-2.0:free",
-    "inclusionai/ling-3.0-flash-sante:free", "inclusionai/ling-3.1-flash:free",
+    "poolside/laguna-s-2.1-free", "inclusionai/ling-3.0-flash-sante:free",
+    "inclusionai/ling-3.1-flash:free",
     # open-weight, Go plan and above
     "deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash",
     "deepseek/deepseek-v4-flash-fast", "deepseek/deepseek-v4-flash-vision-exp",
@@ -121,7 +126,7 @@ MODELS = [
     "moonshotai/Kimi-K3", "moonshotai/Kimi-K2.7-Code",
     "moonshotai/Kimi-K2.7-Code-Highspeed", "moonshotai/Kimi-K2.6",
     "moonshotai/Kimi-K2.5",
-    "zai-org/GLM-5.3", "z-ai/glm-5.3-flash", "zai-org/GLM-5.2",
+    "zai-org/GLM-5.3", "zai-org/GLM-5.2",
     "zai-org/GLM-5.2-Fast", "zai-org/GLM-5.1", "zai-org/GLM-5",
     "MiniMaxAI/MiniMax-M3", "MiniMaxAI/MiniMax-M2.7", "MiniMaxAI/MiniMax-M2.5",
     "xiaomi/mimo-v2.5-pro", "xiaomi/mimo-v2.5",
@@ -132,6 +137,7 @@ MODELS = [
     "tencent/hy4-preview", "tencent/hy3-paid",
     "nvidia/nemotron-3-ultra-550b-a55b",
     "thinkingmachines/inkling", "thinkingmachines/inkling-small",
+    "meituan/LongCat-2.0",
     # premium on Go
     "gpt-5.6-luna", "xai/grok-4.5",
     "meta/muse-spark-1.2-contributor", "meta/muse-spark-1.3-contributor",
@@ -871,7 +877,8 @@ class Handler(BaseHTTPRequestHandler):
                 "Authorization: Bearer user_..."}})
             return
 
-        model = body.get("model", "unknown")
+        model = body.get("model") or DEFAULT_MODEL
+        body["model"] = model
         want_stream = bool(body.get("stream"))
         cid = "chatcmpl-" + uuid.uuid4().hex[:24]
         created = int(time.time())

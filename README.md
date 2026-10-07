@@ -24,7 +24,16 @@ python proxy.py
 ```
 
 ```bash
-# VPS（务必设网关 key！）
+# VPS 交互式部署（推荐，Ubuntu/Debian，systemd 自启 + 冒烟验证）
+# 把 proxy.py 和 deploy.sh 传上去后:
+bash deploy.sh
+# 脚本依次要你输入: user_ token（手动粘贴）→ 网关 key（回车自动生成）
+# → 端口（回车 18787）→ 默认模型（回车 GLM-5.3 Flash），其余全自动
+```
+
+手动方式（任何 Linux）：
+
+```bash
 CMD_CODE_TOKEN=user_xxx CMD_CODE_KEY=强随机密码 CMD_CODE_HOST=0.0.0.0 python3 proxy.py
 ```
 
@@ -35,6 +44,7 @@ CMD_CODE_TOKEN=user_xxx CMD_CODE_KEY=强随机密码 CMD_CODE_HOST=0.0.0.0 pytho
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `CMD_CODE_TOKEN` | 空 | 上游 `user_*` token（服务端保密；不设则要求客户端 Bearer 直传） |
+| `CMD_CODE_DEFAULT_MODEL` | `z-ai/glm-5.3-flash` | 客户端未指定模型时使用（Go 计划主力：1M 上下文 / $0.15/$0.50） |
 | `CMD_CODE_KEY` | 空 | 网关 key，客户端须以 `Bearer` 或 `?key=` 传入；**公网部署必设** |
 | `CMD_CODE_HOST` / `CMD_CODE_PORT` | `127.0.0.1` / `18787` | 监听地址/端口 |
 | `CMD_CODE_VERSION` | `1.53.1` | `x-command-code-version`（钉在已实现的协议形状上，勿盲目跟 npm 最新） |
