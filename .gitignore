@@ -1,0 +1,30 @@
+# secrets & credentials - never commit
+.env
+*.env
+auth.json
+*.token
+
+# local usage database
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+cc_proxy_usage.db*
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# logs & dumps
+*.log
+logs/
+dump/
+
+# editor
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
