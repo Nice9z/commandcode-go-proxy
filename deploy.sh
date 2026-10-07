@@ -1,90 +1,84 @@
 #!/usr/bin/env bash
 # ============================================================
-# Command Code Go 反代 - VPS 一键部署
+# Command Code Go 反代 - VPS 一键部署 (v2)
 #
-# 一键执行（无需 clone 仓库）:
 #   curl -fsSL https://raw.githubusercontent.com/Nice9z/commandcode-go-proxy/main/deploy.sh | bash
 #
-# 或先下载再跑（效果相同）:
-#   bash deploy.sh
-#
 # 适配: Ubuntu / Debian (systemd, python3>=3.8, curl)
-# 交互输入走 /dev/tty，所以 curl | bash 管道模式下也能正常提问
+# 安装位置: /opt/cc-go-proxy  (root 必需)
 # ============================================================
 set -euo pipefail
 
 APP="cc-go-proxy"
-SELFDIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd || pwd)"
+INSTALL_DIR="/opt/cc-go-proxy"
 RAW_BASES=(
   "https://raw.githubusercontent.com/Nice9z/commandcode-go-proxy/main"
   "https://ghfast.top/https://raw.githubusercontent.com/Nice9z/commandcode-go-proxy/main"
 )
 
-# tty 读取（管道下仍可交互）
+[ "$(id -u)" = "0" ] || { echo "请用 root 运行 (sudo bash)"; exit 1; }
+
 ask() { read -r -p "$1" "$2" < /dev/tty; }
+token_ok() { case "$1" in user_*) return 0 ;; *) return 1 ;; esac; }
 
 echo "=============================================="
 echo " Command Code Go 反代 VPS 一键部署"
 echo "=============================================="
 
-# ---- 0. 依赖 ----
+# ---- 0. 清理旧安装 ----
+systemctl disable --now "$APP" >/dev/null 2>&1 || true
+rm -f "/etc/systemd/system/${APP}.service" "/etc/${APP}.env"
+systemctl daemon-reload 2>/dev/null || true
+
+# ---- 1. 依赖 ----
 PY="$(command -v python3 || command -v python || true)"
 if [ -z "$PY" ]; then
-  echo "[*] 未找到 python3，尝试安装..."
+  echo "[*] 安装 python3..."
   if command -v apt-get >/dev/null; then apt-get update -y && apt-get install -y python3
   elif command -v dnf >/dev/null; then dnf install -y python3
   elif command -v yum >/dev/null; then yum install -y python3
-  else echo "请手动安装 python3 后重试"; exit 1; fi
+  else echo "请手动安装 python3"; exit 1; fi
   PY="$(command -v python3)"
 fi
-command -v curl >/dev/null || { echo "[*] 安装 curl..."; apt-get update -y && apt-get install -y curl; }
+command -v curl >/dev/null || { apt-get update -y && apt-get install -y curl; }
 
-# ---- 1. 拿 proxy.py（当前目录没有就从 GitHub 拉，含国内镜像回退）----
-PROXY=""
-if [ -f "$SELFDIR/proxy.py" ]; then
-  PROXY="$SELFDIR/proxy.py"
+# ---- 2. 安装 proxy.py 到 /opt ----
+mkdir -p "$INSTALL_DIR"
+if [ -f "$(pwd)/proxy.py" ] && grep -q "alpha/generate" "$(pwd)/proxy.py" 2>/dev/null; then
+  cp "$(pwd)/proxy.py" "$INSTALL_DIR/proxy.py"
+  echo "[*] 使用本地 proxy.py"
 else
   echo "[*] 下载 proxy.py..."
+  OK=""
   for base in "${RAW_BASES[@]}"; do
-    if curl -fsSL --max-time 60 -o /tmp/cc-proxy.py "$base/proxy.py"; then
-      grep -q "alpha/generate" /tmp/cc-proxy.py 2>/dev/null || { rm -f /tmp/cc-proxy.py; continue; }
-      mv /tmp/cc-proxy.py ./proxy.py; PROXY="$PWD/proxy.py"; break
+    if curl -fsSL --max-time 60 -o "$INSTALL_DIR/proxy.py.tmp" "$base/proxy.py?v=$(date +%s)" \
+       && grep -q "alpha/generate" "$INSTALL_DIR/proxy.py.tmp"; then
+      mv "$INSTALL_DIR/proxy.py.tmp" "$INSTALL_DIR/proxy.py"; OK=1; break
     fi
+    rm -f "$INSTALL_DIR/proxy.py.tmp"
   done
-  [ -n "$PROXY" ] || { echo "下载 proxy.py 失败（检查网络或手动上传）"; exit 1; }
-  echo "    OK -> $PROXY"
+  [ -n "$OK" ] || { echo "下载失败，检查网络后重试"; exit 1; }
 fi
-WORKDIR="$(dirname "$PROXY")"
+PROXY="$INSTALL_DIR/proxy.py"
 
-# ---- 2. 上游 token ----
+# ---- 3. 配置 ----
 TOKEN="${CMD_CODE_TOKEN:-}"
-if [ -n "$TOKEN" ]; then
-  echo "[*] 检测到环境变量 token，直接使用"
-else
+[ -n "$TOKEN" ] && echo "[*] 使用环境变量中的 token"
+while ! token_ok "${TOKEN:-}"; do
   ask "粘贴你的 user_ API token (commandcode.ai/settings/billing): " TOKEN
-fi
-while [ ! "${TOKEN:-}" =~ ^user_ ]; do
-  echo "  token 应该以 user_ 开头，请重试"
-  ask "粘贴你的 user_ API token: " TOKEN
+  token_ok "$TOKEN" || echo "  token 应该以 user_ 开头"
 done
 
-# ---- 3. 网关 key ----
 GKEY="${CMD_CODE_KEY:-}"
 if [ -z "$GKEY" ]; then
   ask "客户端网关 key [回车=自动生成强随机]: " GKEY
-fi
-if [ -z "$GKEY" ]; then
-  GKEY="sk-gw-$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-  echo "  已生成: $GKEY"
+  [ -z "$GKEY" ] && { GKEY="sk-gw-$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"; echo "  已生成: $GKEY"; }
 fi
 
-# ---- 4. 端口 / 默认模型 ----
-ask "监听端口 [18787]: " PORT
-PORT=${PORT:-18787}
-ask "默认模型 [z-ai/glm-5.3-flash]: " DEFMODEL
-DEFMODEL=${DEFMODEL:-z-ai/glm-5.3-flash}
+ask "监听端口 [18787]: " PORT;  PORT=${PORT:-18787}
+ask "默认模型 [z-ai/glm-5.3-flash]: " DEFMODEL;  DEFMODEL=${DEFMODEL:-z-ai/glm-5.3-flash}
 
-# ---- 5. systemd 环境文件 (0600) ----
+# ---- 4. 环境文件 (0600) ----
 ENVF="/etc/${APP}.env"
 umask 077
 cat > "$ENVF" <<EOF
@@ -93,10 +87,12 @@ CMD_CODE_KEY=$GKEY
 CMD_CODE_HOST=0.0.0.0
 CMD_CODE_PORT=$PORT
 CMD_CODE_DEFAULT_MODEL=$DEFMODEL
+CMD_CODE_DB=$INSTALL_DIR/cc_proxy_usage.db
 EOF
 umask 022
 
-# ---- 6. systemd 服务（安全加固）----
+# ---- 5. systemd 服务 ----
+# 注意: ProtectHome=true 会隐藏 /root, 所以程序放在 /opt; DB 也指向 /opt
 cat > "/etc/systemd/system/${APP}.service" <<EOF
 [Unit]
 Description=Command Code Go-plan reverse proxy
@@ -105,7 +101,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=$WORKDIR
+WorkingDirectory=$INSTALL_DIR
 EnvironmentFile=$ENVF
 ExecStart=$PY $PROXY
 Restart=always
@@ -114,7 +110,7 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=$WORKDIR
+ReadWritePaths=$INSTALL_DIR
 MemoryMax=512M
 
 [Install]
@@ -125,10 +121,14 @@ systemctl daemon-reload
 systemctl enable --now "$APP"
 sleep 2
 
-# ---- 7. 冒烟验证 ----
+# ---- 6. 冒烟 ----
 echo ""
 echo "--- 服务状态 ---"
-systemctl is-active "$APP" && echo "[OK] 服务已启动" || { journalctl -u "$APP" -n 20 --no-pager; exit 1; }
+if systemctl is-active --quiet "$APP"; then
+  echo "[OK] 服务运行中"
+else
+  echo "[FAIL] 服务启动失败:"; journalctl -u "$APP" -n 20 --no-pager; exit 1
+fi
 echo "--- 冒烟: /healthz ---"
 curl -s "http://127.0.0.1:$PORT/healthz" | head -c 200; echo ""
 echo "--- 冒烟: 真实请求（免费模型，不烧额度）---"
@@ -144,6 +144,7 @@ echo "   API:       http://<VPS_IP>:$PORT/v1"
 echo "   看板:      http://<VPS_IP>:$PORT/dashboard"
 echo "   客户端key: $GKEY   (只显示这一次, 存好)"
 echo "   默认模型:  $DEFMODEL"
+echo "   安装位置:  $INSTALL_DIR"
 echo "   日志:      journalctl -u $APP -f"
 echo "   换token:   编辑 $ENVF 后 systemctl restart $APP"
 echo ""
