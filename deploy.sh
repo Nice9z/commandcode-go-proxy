@@ -85,29 +85,37 @@ elif [ -n "$GH_VER" ]; then
   echo "[*] 已是最新版本 v$LOCAL_VER"
 fi
 
-# ---- 3. 配置：已有配置则全部保留，回车=不改 ----
+# ---- 3. 配置 ----
 ENVF="/etc/${APP}.env"
 if [ -f "$ENVF" ]; then
   OLD_TOKEN="$(grep -oE '^CMD_CODE_TOKEN=.*' "$ENVF" | cut -d= -f2-)"
   OLD_KEY="$(grep -oE '^CMD_CODE_KEY=.*' "$ENVF" | cut -d= -f2-)"
   OLD_PORT="$(grep -oE '^CMD_CODE_PORT=.*' "$ENVF" | cut -d= -f2-)"
   OLD_MODEL="$(grep -oE '^CMD_CODE_DEFAULT_MODEL=.*' "$ENVF" | cut -d= -f2-)"
-  echo "[*] 检测到已有配置，直接回车保留原值"
+  echo "[*] 检测到已有配置"
 
-  ask "API 密钥 [回车=不变]: " TOKEN
+  # API 密钥：回车=不变，其他=输入新密钥
+  ask "API 密钥 (user_ 开头) [回车=不变]: " TOKEN
   TOKEN=${TOKEN:-$OLD_TOKEN}
   while ! token_ok "$TOKEN"; do
     echo "  应该以 user_ 开头"
-    ask "API 密钥 [回车=不变]: " TOKEN
+    ask "API 密钥 (user_ 开头) [回车=不变]: " TOKEN
     TOKEN=${TOKEN:-$OLD_TOKEN}
   done
 
-  ask "网关密码 [回车=不变]: " GKEY
+  # 网关密码：回车=不变，1=重新随机生成，其他=用输入值
+  ask "网关密码 [回车=不变 | 1=重新生成]: " GKEY
+  if [ "$GKEY" = "1" ]; then
+    GKEY="sk-gw-$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    echo "  已重新生成: $GKEY"
+  fi
   GKEY=${GKEY:-$OLD_KEY}
 
+  # 端口：回车=不变，其他=新端口
   ask "端口 [回车=不变，当前 $OLD_PORT]: " PORT
   PORT=${PORT:-$OLD_PORT}
 
+  # 默认模型：回车=不变，其他=新模型
   ask "默认模型 [回车=不变，当前 $OLD_MODEL]: " DEFMODEL
   DEFMODEL=${DEFMODEL:-$OLD_MODEL}
 else
