@@ -1,4 +1,4 @@
-# CommandCode Go Proxy — $1 订阅反代网关
+# commandcode-go-proxy
 
 [![Release](https://img.shields.io/badge/Release-v0.0.9-blue)](https://github.com/Nice9z/commandcode-go-proxy/releases)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue)](https://www.python.org/)
@@ -8,14 +8,12 @@
 [![Vibe Coding](https://img.shields.io/badge/Vibe_Coding-100%25-ff69b4)](#)
 [![Dependencies](https://img.shields.io/badge/依赖-零-orange)](#)
 
-**把你 $1/月的 [Command Code](https://commandcode.ai) Go 订阅，变成随时随地可用的 OpenAI 兼容 API。**
+Command Code 的 Go 订阅（$1/月）官方不提供 API，只能用官方 CLI。本项目逆向了 CLI 与服务端的通信协议，把订阅额度转换成标准的 `/v1/chat/completions` 端点。Cursor、Aider、任意 OpenAI SDK 都可以直接使用 Go 计划内的 45 个模型（GLM-5.3 Flash、DeepSeek V4.1、Kimi K3、Qwen 3.8 Max 等），附带中文用量看板，显示每个模型的 token 消耗和成本。
 
-Go 套餐官方不开放 API，只能用官方 CLI。本项目 reverse 了 CLI 的通信协议，把订阅额度反代成标准 `/v1/chat/completions` 端点——于是 Cursor、Aider、任意 OpenAI SDK、甚至你自己的脚本，都能直接吃上 Go 计划里的 45 个模型（GLM-5.3 Flash、DeepSeek V4.1、Kimi K3、Qwen 3.8 Max……），附赠一个实时中文用量看板，每一个 token 花在哪个模型上，一目了然。
-
-- **$1 当 $40 花**：Go 计划的额度倍率原样保留，走反代不额外扣
-- **装完即忘**：一条命令部署，systemd 守护，崩了自动拉起
-- **看板说话**：请求数 / 成功率 / token 分布 / 缓存命中率 / 平均延迟，按天·周·月自由切
-- **多设备同吃**：手机、电脑、平板，全走一个 HTTPS 地址
+- Go 计划的额度倍率保留，走反代不额外扣费
+- 一条命令部署，systemd 守护，崩溃自动重启
+- 看板：请求数、成功率、token 分布、缓存命中率、平均延迟，按天/周/月筛选
+- 支持多设备，通过 HTTPS 访问
 
 > ⚠️ **免责声明**：非官方逆向工程产物，与 Command Code / Langbase 无关联。使用逆向协议可能违反其服务条款，账号风险自行承担，仅供学习研究与个人合法订阅使用。禁止转售或多用户共用。
 
