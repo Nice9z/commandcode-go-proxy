@@ -47,7 +47,7 @@ SSH 登录 VPS（Ubuntu/Debian），执行以下命令：
 curl -fsSL https://raw.githubusercontent.com/Nice9z/commandcode-go-proxy/main/deploy.sh | bash
 ```
 
-脚本会依次让你输入 4 样东西：
+首次安装时，脚本会依次让你输入 4 样东西：
 
 | 提示 | 怎么填 |
 |---|---|
@@ -56,7 +56,9 @@ curl -fsSL https://raw.githubusercontent.com/Nice9z/commandcode-go-proxy/main/de
 | 端口 | 直接回车（用 18787） |
 | 默认模型 | 直接回车（用 GLM-5.3 Flash） |
 
-脚本随后自动完成：注册系统服务、设置开机自启、配置服务异常退出时自动重启，并发送一条测试请求验证服务是否正常。完成后屏幕上会显示你的接口地址、面板地址和网关密码——**网关密码只显示这一次，记下来**。
+已有配置时重跑（升级版本）：四项都直接回车即保留原值；想改哪项就输入新值，网关密码输入 `1` 可重新生成。
+
+脚本随后自动完成：注册系统服务、设置开机自启、配置服务异常退出时自动重启，并发送一条测试请求验证服务是否正常。完成后屏幕上会显示你的接口地址、面板地址和网关密码。
 
 常用管理命令：
 
@@ -102,9 +104,9 @@ CMD_CODE_TOKEN=user_你的API密钥 python3 proxy.py
 
 | 设置项 | 填什么 |
 |---|---|
-| Base URL / 接口地址 | `http://你的IP:18787/v1`（本机就是 `http://127.0.0.1:18787/v1`） |
+| Base URL / 接口地址 | 直连：`http://你的IP:18787/v1`（本机 `http://127.0.0.1:18787/v1`）；套 nginx 反代后用 `https://你的域名/v1` |
 | API Key | 部署时生成的网关密码（本机直跑没设网关密码就随便填） |
-| 模型 | 不填默认 GLM-5.3 Flash；要换就填模型名，如 `moonshotai/Kimi-K3` |
+| 模型 | 不填默认 GLM-5.3 Flash；要换就填模型名，如 `moonshotai/Kimi-K3`（常见简写会自动纠正为完整名称） |
 
 ---
 
@@ -127,7 +129,7 @@ CMD_CODE_TOKEN=user_你的API密钥 python3 proxy.py
 
 - OpenAI 兼容：流式（SSE）/ 非流式、tool calls、系统提示词、多模态图片（data URL）
 - 思考内容映射为 `reasoning_content`（DeepSeek 风格）
-- 中文看板：请求数/成功率/输入输出缓存推理 tokens/**上游真实美元成本**（取自上游 `gateway.cost`）/延迟，按模型矩阵 + 最近请求表，今天/24h/7d/全部筛选，5 秒自动刷新
+- 中文看板：请求数、成功率、token 分布、缓存命中率、平均延迟，按模型汇总 + 最近请求明细，今天/24小时/7天/本月/上月/全部筛选，5 秒自动刷新，深浅色主题，移动端适配
 - SQLite 持久化（纯标准库 `sqlite3`），重启不丢
 - 上游真实 401/402/403/429 语义错误原样回传，客户端能正确处理额度/鉴权问题
 
