@@ -1,7 +1,5 @@
 # commandcode-go-proxy
 
-当前版本：**v0.0.2**（[修改记录](CHANGELOG.md)）
-
 把 [Command Code](https://commandcode.ai)（含 $1/月 Go 套餐）的订阅额度反代为 **OpenAI 兼容**端点（`/v1/chat/completions`），自带中文用量看板。单文件、纯 Python 标准库、零依赖。
 
 > ⚠️ **免责声明**：非官方逆向工程产物，与 Command Code / Langbase 无关联。使用逆向协议可能违反其服务条款，账号风险自行承担，仅供学习研究与个人合法订阅使用。禁止转售或多用户共用。
