@@ -1,5 +1,7 @@
 # commandcode-go-proxy
 
+当前版本：**v0.0.2**（[修改记录](CHANGELOG.md)）
+
 把 [Command Code](https://commandcode.ai)（含 $1/月 Go 套餐）的订阅额度反代为 **OpenAI 兼容**端点（`/v1/chat/completions`），自带中文用量看板。单文件、纯 Python 标准库、零依赖。
 
 > ⚠️ **免责声明**：非官方逆向工程产物，与 Command Code / Langbase 无关联。使用逆向协议可能违反其服务条款，账号风险自行承担，仅供学习研究与个人合法订阅使用。禁止转售或多用户共用。
@@ -17,14 +19,14 @@ OpenAI 客户端 ──POST /v1/chat/completions──▶ 本代理 ──翻译
 
 ```bash
 # 本机
-set CMD_CODE_TOKEN=user_xxxx        # Windows（token 见 commandcode.ai/settings/billing）
+set CMD_CODE_TOKEN=user_xxxx        # Windows（API 密钥见 commandcode.ai/settings/billing）
 export CMD_CODE_TOKEN=user_xxxx     # Linux/macOS
 python proxy.py
 # 看板: http://127.0.0.1:18787/dashboard
 ```
 
 ```bash
-# VPS 一键部署（Ubuntu/Debian，无需 clone，systemd 自启 + 冒烟验证）:
+# VPS 一键部署（Ubuntu/Debian，无需 clone，systemd 自启 + 部署后自动测试）:
 curl -fsSL https://raw.githubusercontent.com/Nice9z/commandcode-go-proxy/main/deploy.sh | bash
 # 脚本依次要你输入: API 密钥（手动粘贴，user_ 开头）→ 网关 key（回车自动生成）
 # → 端口（回车 18787）→ 默认模型（回车 GLM-5.3 Flash），其余全自动
@@ -37,11 +39,11 @@ curl -fsSL https://raw.githubusercontent.com/Nice9z/commandcode-go-proxy/main/de
 CMD_CODE_TOKEN=user_xxx CMD_CODE_KEY=强随机密码 CMD_CODE_HOST=0.0.0.0 python3 proxy.py
 ```
 
-客户端接入：Base URL `http://<host>:18787/v1`，API Key 填 `CMD_CODE_KEY`（或直接传 `user_*` token，直通模式）。
+客户端接入：Base URL `http://<host>:18787/v1`，API Key 填 `CMD_CODE_KEY`（或直接填你的 API 密钥 `user_*`，直通模式）。
 
 ## 更新
 
-脚本持续迭代，VPS 上升级只需一条命令（保留你的 token/网关 key 配置，只替换程序并重启）：
+脚本持续迭代，VPS 上升级只需一条命令（你填过的 API 密钥和网关密码都保留，只更新程序并重启）：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Nice9z/commandcode-go-proxy/main/deploy.sh | bash -s -- update
@@ -83,7 +85,7 @@ curl -fsSL https://raw.githubusercontent.com/Nice9z/commandcode-go-proxy/main/de
 - SQLite 只存：模型名、token 数、成本、延迟、状态码、**脱敏后**的错误文本。绝不存消息正文、绝不存在任何 key
 - stderr 日志全部脱敏（`user_*`/`sk-*` 掩码），请求体永不落日志
 - 每次请求的临时文件用后即删；数据库文件 chmod 600（Windows 上尽力而为）
-- 上游 token 只存在于环境变量（或客户端 Bearer 直通），从不写盘
+- 你的 API 密钥只存在于环境变量（或客户端直传），从不写盘
 
 ## 防封措施
 

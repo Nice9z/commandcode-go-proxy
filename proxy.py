@@ -19,7 +19,7 @@ Run (VPS):
   CMD_CODE_TOKEN=user_... CMD_CODE_KEY=pick-a-secret CMD_CODE_HOST=0.0.0.0 \
   CMD_CODE_PORT=18787 python3 command_code_proxy.py
 Env:
-  CMD_CODE_TOKEN     user_... token (server-side secret; or client Bearer)
+  CMD_CODE_TOKEN     your user_... API key from commandcode.ai (server-side secret)
   CMD_CODE_KEY       gateway key clients must send as Bearer (SET ON VPS)
   CMD_CODE_HOST      listen host (default 127.0.0.1; 0.0.0.0 on VPS)
   CMD_CODE_PORT      listen port (default 18787)
@@ -901,9 +901,9 @@ class Handler(BaseHTTPRequestHandler):
 
         auth = self._auth()
         if not auth:
-            _record(401, error="no upstream token")
+            _record(401, error="no API key configured")
             self._json(401, {"error": {"message":
-                "no upstream token: set CMD_CODE_TOKEN env or send "
+                "no API key: set CMD_CODE_TOKEN env or send "
                 "Authorization: Bearer user_..."}})
             return
 
@@ -1081,7 +1081,7 @@ if __name__ == "__main__":
     srv = ThreadingHTTPServer((HOST, PORT), Handler)
     log("listening on http://%s:%d  (dashboard: /dashboard)  ->  %s/alpha/generate"
         % (HOST, PORT, UPSTREAM))
-    log("token %s | gateway key %s | version header %s | db %s | curl %s"
+    log("api key %s | gateway key %s | version header %s | db %s | curl %s"
         % ("set" if TOKEN else "NOT SET",
            "required" if PROXY_KEY else "open",
            VERSION, DB_PATH, CURL))

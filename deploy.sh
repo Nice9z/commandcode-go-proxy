@@ -81,7 +81,7 @@ PROXY="$INSTALL_DIR/proxy.py"
 
 # ---- 3. API 密钥 ----
 TOKEN="${CMD_CODE_TOKEN:-}"
-[ -n "$TOKEN" ] && echo "[*] 使用环境变量中的 token"
+[ -n "$TOKEN" ] && echo "[*] 使用环境变量中已设置的 API 密钥"
 while ! token_ok "${TOKEN:-}"; do
   ask "粘贴你的 API 密钥 (user_ 开头, commandcode.ai/settings/billing): " TOKEN
   token_ok "$TOKEN" || echo "  应该以 user_ 开头"
@@ -139,7 +139,7 @@ systemctl daemon-reload
 systemctl enable --now "$APP"
 sleep 2
 
-# ---- 6. 冒烟 ----
+# ---- 6. 自动测试（发测试请求，确认服务正常）----
 echo ""
 echo "--- 服务状态 ---"
 if systemctl is-active --quiet "$APP"; then
@@ -147,9 +147,9 @@ if systemctl is-active --quiet "$APP"; then
 else
   echo "[FAIL] 服务启动失败:"; journalctl -u "$APP" -n 20 --no-pager; exit 1
 fi
-echo "--- 冒烟: /healthz ---"
+echo "--- 检查 1：服务是否在线 ---"
 curl -s "http://127.0.0.1:$PORT/healthz" | head -c 200; echo ""
-echo "--- 冒烟: 真实请求（免费模型，不烧额度）---"
+echo "--- 检查 2：发一条真实请求（用免费模型，不消耗额度）---"
 curl -s --max-time 90 -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
   -H "Content-Type: application/json" -H "Authorization: Bearer $GKEY" \
   -d '{"model":"inclusionai/ling-3.1-flash:free","messages":[{"role":"user","content":"回复OK"}],"max_tokens":20}' \
@@ -164,7 +164,7 @@ echo "   客户端key: $GKEY   (只显示这一次, 存好)"
 echo "   默认模型:  $DEFMODEL"
 echo "   安装位置:  $INSTALL_DIR"
 echo "   日志:      journalctl -u $APP -f"
-echo "   换token:   编辑 $ENVF 后 systemctl restart $APP"
+echo "   换API密钥:  编辑 $ENVF 后 systemctl restart $APP"
 echo ""
 echo " 建议: 防火墙只放行你自己的 IP 访问 $PORT，或套 nginx/caddy 上 TLS"
 echo "=============================================="
