@@ -15,29 +15,84 @@ OpenAI 客户端 ──POST /v1/chat/completions──▶ 本代理 ──翻译
 
 ## 快速开始
 
-```bash
-# 本机
-set CMD_CODE_TOKEN=user_xxxx        # Windows（API 密钥见 commandcode.ai/settings/billing）
-export CMD_CODE_TOKEN=user_xxxx     # Linux/macOS
-python proxy.py
-# 看板: http://127.0.0.1:18787/dashboard
-```
+前置：去 [commandcode.ai/settings/billing](https://commandcode.ai/settings/billing) 创建一个 API 密钥（`user_` 开头），复制好。
+
+---
+
+### 方式一：VPS 一键部署（推荐）
+
+适合：把服务跑在 VPS 上，24 小时在线，任何设备都能连。
+
+SSH 登录 VPS（Ubuntu/Debian），执行一条命令：
 
 ```bash
-# VPS 一键部署（Ubuntu/Debian，无需 clone，systemd 自启 + 部署后自动测试）:
 curl -fsSL https://raw.githubusercontent.com/Nice9z/commandcode-go-proxy/main/deploy.sh | bash
-# 脚本依次要你输入: API 密钥（手动粘贴，user_ 开头）→ 网关 key（回车自动生成）
-# → 端口（回车 18787）→ 默认模型（回车 GLM-5.3 Flash），其余全自动
-# 国内网络下载慢会自动走 ghfast.top 镜像
 ```
 
-手动方式（任何 Linux）：
+脚本会依次让你输入 4 样东西：
+
+| 提示 | 怎么填 |
+|---|---|
+| API 密钥 | 粘贴你刚复制的 `user_` 密钥 |
+| 网关密码 | 直接回车（自动生成强随机密码） |
+| 端口 | 直接回车（用 18787） |
+| 默认模型 | 直接回车（用 GLM-5.3 Flash） |
+
+然后全自动：注册系统服务、开机自启、程序崩了自动拉起、发一条测试请求验证服务正常。完成后屏幕上会显示你的接口地址、面板地址和网关密码——**网关密码只显示这一次，记下来**。
+
+以后升级到新版本，还是 SSH 上 VPS 执行一条命令（API 密钥和网关密码都保留）：
 
 ```bash
-CMD_CODE_TOKEN=user_xxx CMD_CODE_KEY=强随机密码 CMD_CODE_HOST=0.0.0.0 python3 proxy.py
+curl -fsSL https://raw.githubusercontent.com/Nice9z/commandcode-go-proxy/main/deploy.sh | bash -s -- update
 ```
 
-客户端接入：Base URL `http://<host>:18787/v1`，API Key 填 `CMD_CODE_KEY`（或直接填你的 API 密钥 `user_*`，直通模式）。
+常用管理命令：
+
+```bash
+journalctl -u cc-go-proxy -f      # 看实时日志
+systemctl restart cc-go-proxy     # 重启服务
+nano /etc/cc-go-proxy.env         # 改 API 密钥或网关密码，改完重启
+```
+
+---
+
+### 方式二：在本机直接运行（Windows / macOS / Linux）
+
+适合：自己电脑上临时用，不买 VPS。
+
+1. 下载仓库里的 [proxy.py](https://raw.githubusercontent.com/Nice9z/commandcode-go-proxy/main/proxy.py)
+2. 在 proxy.py 所在目录打开终端，运行：
+
+Windows（cmd）：
+
+```bat
+set CMD_CODE_TOKEN=user_你的API密钥
+python proxy.py
+```
+
+macOS / Linux：
+
+```bash
+CMD_CODE_TOKEN=user_你的API密钥 python3 proxy.py
+```
+
+3. 浏览器打开 `http://127.0.0.1:18787/dashboard` 看面板。接口地址是 `http://127.0.0.1:18787/v1`。
+
+注意：本机运行关掉终端服务就停了。要长期挂着请用方式一。
+
+---
+
+### 客户端怎么接（两种方式都一样）
+
+任何支持自定义 OpenAI 接口的工具（Cursor、Aider、Continue 等）：
+
+| 设置项 | 填什么 |
+|---|---|
+| Base URL / 接口地址 | `http://你的IP:18787/v1`（本机就是 `http://127.0.0.1:18787/v1`） |
+| API Key | 部署时生成的网关密码（本机直跑没设网关密码就随便填） |
+| 模型 | 不填默认 GLM-5.3 Flash；要换就填模型名，如 `moonshotai/Kimi-K3` |
+
+---
 
 ## 更新
 
