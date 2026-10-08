@@ -103,7 +103,7 @@ DB_PATH = os.environ.get("CMD_CODE_DB") or os.path.join(
 CURL = os.environ.get("CMD_CODE_CURL") or (
     shutil.which("curl.exe") or shutil.which("curl") or "curl")
 
-APP_VERSION = "0.0.4"          # keep in sync with the latest GitHub Release tag
+APP_VERSION = "0.0.5"          # keep in sync with the latest GitHub Release tag
 _REPO = "Nice9z/commandcode-go-proxy"
 _latest_cache = {"v": None, "ts": 0.0}
 
@@ -914,7 +914,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not self._key_ok():
             self._json(401, {"error": {"message":
-                "invalid gateway key (send Authorization: Bearer <CMD_CODE_KEY>)"}})
+                "invalid gateway key. Find yours on the server: cat /etc/cc-go-proxy.env (line CMD_CODE_KEY=...), then send header: Authorization: Bearer <that key>"}})
             return
         started = time.monotonic()
         client = self.client_address[0]
