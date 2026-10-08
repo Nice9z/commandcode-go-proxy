@@ -6,14 +6,17 @@
 [![Dashboard](https://img.shields.io/badge/Dashboard-中文看板-teal)](#快速开始)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 [![Vibe Coding](https://img.shields.io/badge/Vibe_Coding-100%25-ff69b4)](#)
-[![Dependencies](https://img.shields.io/badge/依赖-零-orange)](#)
 
-Command Code 的 Go 订阅（$1/月）官方不提供 API，只能用官方 CLI。本项目逆向了 CLI 与服务端的通信协议，把订阅额度转换成标准的 `/v1/chat/completions` 端点。Cursor、Aider、任意 OpenAI SDK 都可以直接使用 Go 计划内的 45 个模型（GLM-5.3 Flash、DeepSeek V4.1、Kimi K3、Qwen 3.8 Max 等），附带中文用量看板，显示每个模型的 token 消耗和成本。
+本项目将 [Command Code](https://commandcode.ai) Go 订阅（$1/月）的额度转换为 OpenAI 兼容的 API 端点（`/v1/chat/completions`），并提供中文用量看板。
 
-- Go 计划的额度倍率保留，走反代不额外扣费
-- 一条命令部署，systemd 守护，崩溃自动重启
-- 看板：请求数、成功率、token 分布、缓存命中率、平均延迟，按天/周/月筛选
-- 支持多设备，通过 HTTPS 访问
+Go 订阅官方未提供 API，本项目通过分析 CLI 与服务端的通信协议实现该功能。支持 Go 计划内的 45 个模型（GLM-5.3 Flash、DeepSeek V4.1、Kimi K3、Qwen 3.8 Max 等），可在 Cursor、Aider 及任意 OpenAI SDK 中直接使用。
+
+主要功能：
+
+- 支持 OpenAI 格式的流式与非流式请求、工具调用、多轮对话
+- 提供用量看板：请求数、成功率、token 分布、缓存命中率、平均延迟，支持按日期范围筛选
+- 支持通过 systemd 部署，服务异常退出时自动重启
+- 支持多设备通过 HTTPS 访问
 
 > ⚠️ **免责声明**：非官方逆向工程产物，与 Command Code / Langbase 无关联。使用逆向协议可能违反其服务条款，账号风险自行承担，仅供学习研究与个人合法订阅使用。禁止转售或多用户共用。
 
@@ -51,7 +54,7 @@ curl -fsSL https://raw.githubusercontent.com/Nice9z/commandcode-go-proxy/main/de
 | 端口 | 直接回车（用 18787） |
 | 默认模型 | 直接回车（用 GLM-5.3 Flash） |
 
-然后全自动：注册系统服务、开机自启、程序崩了自动拉起、发一条测试请求验证服务正常。完成后屏幕上会显示你的接口地址、面板地址和网关密码——**网关密码只显示这一次，记下来**。
+脚本随后自动完成：注册系统服务、设置开机自启、配置服务异常退出时自动重启，并发送一条测试请求验证服务是否正常。完成后屏幕上会显示你的接口地址、面板地址和网关密码——**网关密码只显示这一次，记下来**。
 
 常用管理命令：
 
@@ -143,7 +146,7 @@ CMD_CODE_TOKEN=user_你的API密钥 python3 proxy.py
 
 - 协议版本钉在 **1.53.1**（与实现的 wire 形状自洽）——"自称最新版却说旧方言"比版本旧更可疑；升级前先核对 CLI 包再 bump
 - 每 key 稳定会话 + `x-project-slug` 头，对齐真实 CLI 流量形态
-- 空 system 发空格占位：阻止上游注入 ~7.5K token 默认提示词（白烧额度且形态异常）
+- 当请求不包含系统提示词时发送空格占位，避免上游注入约 7.5K token 的默认提示词（避免额外消耗额度）
 - 在途并发上限（默认 4）：个人 CLI 使用不会同时打几十个请求
 - 首字节前的传输层闪断才透明重试（2 次、400ms 退避）；语义错误（401/402/403/429）绝不重试；已向客户端吐字后绝不重试
 - 饱和时对客户端 503 + Retry-After，让 SDK 自己退避
