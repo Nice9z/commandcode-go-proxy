@@ -21,9 +21,9 @@ OpenAI 客户端 ──POST /v1/chat/completions──▶ 本代理 ──翻译
 
 ### 方式一：VPS 一键部署（推荐）
 
-适合：把服务跑在 VPS 上，24 小时在线，任何设备都能连。
+适合：把服务部署在 VPS 上，24 小时在线，任何设备都能连。
 
-SSH 登录 VPS（Ubuntu/Debian），执行一条命令：
+SSH 登录 VPS（Ubuntu/Debian），执行以下命令：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Nice9z/commandcode-go-proxy/main/deploy.sh | bash
