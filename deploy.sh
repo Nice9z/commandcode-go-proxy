@@ -28,7 +28,7 @@ echo "=============================================="
 
 # ---- 0. 清理旧安装 ----
 systemctl disable --now "$APP" >/dev/null 2>&1 || true
-rm -f "/etc/systemd/system/${APP}.service" "/etc/${APP}.env"
+rm -f "/etc/systemd/system/${APP}.service"
 systemctl daemon-reload 2>/dev/null || true
 
 # ---- 1. 依赖 ----
@@ -73,22 +73,46 @@ if [ -n "$GH_VER" ]; then
   fi
 fi
 
-# ---- 3. API 密钥 ----
-TOKEN="${CMD_CODE_TOKEN:-}"
-[ -n "$TOKEN" ] && echo "[*] 使用环境变量中已设置的 API 密钥"
-while ! token_ok "${TOKEN:-}"; do
-  ask "粘贴你的 API 密钥 (user_ 开头, 在 commandcode.ai 后台设置里创建): " TOKEN
-  token_ok "$TOKEN" || echo "  应该以 user_ 开头"
-done
+# ---- 3. 配置：已有配置则全部保留，回车=不改 ----
+ENVF="/etc/${APP}.env"
+if [ -f "$ENVF" ]; then
+  OLD_TOKEN="$(grep -oE '^CMD_CODE_TOKEN=.*' "$ENVF" | cut -d= -f2-)"
+  OLD_KEY="$(grep -oE '^CMD_CODE_KEY=.*' "$ENVF" | cut -d= -f2-)"
+  OLD_PORT="$(grep -oE '^CMD_CODE_PORT=.*' "$ENVF" | cut -d= -f2-)"
+  OLD_MODEL="$(grep -oE '^CMD_CODE_DEFAULT_MODEL=.*' "$ENVF" | cut -d= -f2-)"
+  echo "[*] 检测到已有配置，直接回车保留原值"
 
-GKEY="${CMD_CODE_KEY:-}"
-if [ -z "$GKEY" ]; then
-  ask "客户端网关 key [回车=自动生成强随机]: " GKEY
-  [ -z "$GKEY" ] && { GKEY="sk-gw-$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"; echo "  已生成: $GKEY"; }
+  ask "API 密钥 [回车=不变]: " TOKEN
+  TOKEN=${TOKEN:-$OLD_TOKEN}
+  while ! token_ok "$TOKEN"; do
+    echo "  应该以 user_ 开头"
+    ask "API 密钥 [回车=不变]: " TOKEN
+    TOKEN=${TOKEN:-$OLD_TOKEN}
+  done
+
+  ask "网关密码 [回车=不变]: " GKEY
+  GKEY=${GKEY:-$OLD_KEY}
+
+  ask "端口 [回车=不变，当前 $OLD_PORT]: " PORT
+  PORT=${PORT:-$OLD_PORT}
+
+  ask "默认模型 [回车=不变，当前 $OLD_MODEL]: " DEFMODEL
+  DEFMODEL=${DEFMODEL:-$OLD_MODEL}
+else
+  echo "[*] 首次安装"
+  TOKEN="${CMD_CODE_TOKEN:-}"
+  while ! token_ok "${TOKEN:-}"; do
+    ask "粘贴你的 API 密钥 (user_ 开头, 在 commandcode.ai 后台设置里创建): " TOKEN
+    token_ok "$TOKEN" || echo "  应该以 user_ 开头"
+  done
+  GKEY="${CMD_CODE_KEY:-}"
+  if [ -z "$GKEY" ]; then
+    ask "客户端网关密码 [回车=自动生成强随机]: " GKEY
+    [ -z "$GKEY" ] && { GKEY="sk-gw-$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"; echo "  已生成: $GKEY"; }
+  fi
+  ask "监听端口 [18787]: " PORT;  PORT=${PORT:-18787}
+  ask "默认模型 [z-ai/glm-5.3-flash]: " DEFMODEL;  DEFMODEL=${DEFMODEL:-z-ai/glm-5.3-flash}
 fi
-
-ask "监听端口 [18787]: " PORT;  PORT=${PORT:-18787}
-ask "默认模型 [z-ai/glm-5.3-flash]: " DEFMODEL;  DEFMODEL=${DEFMODEL:-z-ai/glm-5.3-flash}
 
 # ---- 4. 环境文件 (0600) ----
 ENVF="/etc/${APP}.env"
@@ -154,7 +178,7 @@ echo "=============================================="
 echo " 部署完成! (版本 v${LOCAL_VER:-unknown})"
 echo "   API:       http://<VPS_IP>:$PORT/v1"
 echo "   看板:      http://<VPS_IP>:$PORT/dashboard"
-echo "   客户端key: $GKEY   (只显示这一次, 存好)"
+echo "   网关密码:  $GKEY"
 echo "   默认模型:  $DEFMODEL"
 echo "   安装位置:  $INSTALL_DIR"
 echo "   日志:      journalctl -u $APP -f"
