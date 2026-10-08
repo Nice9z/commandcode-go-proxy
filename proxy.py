@@ -103,7 +103,28 @@ DB_PATH = os.environ.get("CMD_CODE_DB") or os.path.join(
 CURL = os.environ.get("CMD_CODE_CURL") or (
     shutil.which("curl.exe") or shutil.which("curl") or "curl")
 
-APP_VERSION = "0.0.7"          # keep in sync with the latest GitHub Release tag
+APP_VERSION = "0.0.8"          # keep in sync with the latest GitHub Release tag
+
+# common shorthand -> canonical model ids (Go plan). Keeps clients that
+# send bare names like "glm-5.3-flash" from 404-ing upstream.
+MODEL_ALIASES = {
+    "glm-5.3-flash": "z-ai/glm-5.3-flash",
+    "glm-5.3": "zai-org/GLM-5.3",
+    "glm-5.2": "zai-org/GLM-5.2",
+    "kimi-k3": "moonshotai/Kimi-K3",
+    "kimi-k2.7-code": "moonshotai/Kimi-K2.7-Code",
+    "deepseek-v4-pro": "deepseek/deepseek-v4-pro",
+    "deepseek-v4.1-flash": "deepseek/deepseek-v4.1-flash",
+    "deepseek-v4-flash": "deepseek/deepseek-v4-flash",
+    "minimax-m3": "MiniMaxAI/MiniMax-M3",
+    "qwen3.8-max": "Qwen/Qwen3.8-Max",
+    "qwen3.8-flash": "Qwen/Qwen3.8-Flash",
+    "longcat-2.0": "meituan/LongCat-2.0",
+}
+
+
+def canonical_model(name):
+    return MODEL_ALIASES.get(name, name)
 _REPO = "Nice9z/commandcode-go-proxy"
 _latest_cache = {"v": None, "ts": 0.0}
 
@@ -994,7 +1015,7 @@ class Handler(BaseHTTPRequestHandler):
                 "Authorization: Bearer user_..."}})
             return
 
-        model = body.get("model") or DEFAULT_MODEL
+        model = canonical_model(body.get("model") or DEFAULT_MODEL)
         body["model"] = model
         want_stream = bool(body.get("stream"))
         cid = "chatcmpl-" + uuid.uuid4().hex[:24]
