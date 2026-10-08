@@ -103,7 +103,7 @@ DB_PATH = os.environ.get("CMD_CODE_DB") or os.path.join(
 CURL = os.environ.get("CMD_CODE_CURL") or (
     shutil.which("curl.exe") or shutil.which("curl") or "curl")
 
-APP_VERSION = "0.0.8"          # keep in sync with the latest GitHub Release tag
+APP_VERSION = "0.0.9"          # keep in sync with the latest GitHub Release tag
 
 # common shorthand -> canonical model ids (Go plan). Keeps clients that
 # send bare names like "glm-5.3-flash" from 404-ing upstream.
@@ -612,6 +612,7 @@ class Recorder:
         out = {"range": rng, "requests": 0, "success": 0, "errors": 0,
                "input_tokens": 0, "output_tokens": 0, "cached_tokens": 0,
                "reasoning_tokens": 0, "cost_usd": 0.0, "avg_latency_ms": 0,
+               "cache_hit_rate": None,
                "models": []}
         try:
             with self._lock:
@@ -642,11 +643,14 @@ class Recorder:
                             "reasoning_tokens": r[6] or 0,
                             "cost_usd": round(r[7] or 0.0, 6),
                             "avg_latency_ms": int(r[8] or 0)})
+                if r[3]:
+                    out["cache_hit_rate"] = round(100.0 * (r[5] or 0) / r[3], 1)
             out["models"] = [
                 {"model": m or "?", "requests": n, "success": s or 0,
                  "errors": e or 0, "input": i or 0, "output": o or 0,
                  "cached": ca or 0, "reasoning": re_ or 0,
-                 "cost_usd": round(co or 0.0, 6)}
+                 "cost_usd": round(co or 0.0, 6),
+                 "cache_hit_rate": round(100.0 * (ca or 0) / i, 1) if i else None}
                 for (m, n, s, e, i, o, ca, re_, co) in rows]
         except sqlite3.Error as e:
             out["error"] = str(e)
@@ -760,7 +764,7 @@ border:none;border-radius:8px;padding:11px;font-size:14px;font-weight:600;cursor
 <table id="models"><thead><tr>
 <th>模型</th><th class="num">请求</th><th class="num">成功</th>
 <th class="num">失败</th><th class="num">输入</th><th class="num">输出</th>
-<th class="num">缓存读</th><th class="num">推理</th><th class="num">成本USD</th>
+<th class="num">缓存读</th><th class="num">命中率</th><th class="num">推理</th><th class="num">成本USD</th>
 </tr></thead><tbody></tbody></table>
 <h2>最近请求</h2>
 <table id="recent"><thead><tr>
@@ -808,6 +812,7 @@ async function load(){
       kpi('输入 tokens',fmtN(s.input_tokens))+
       kpi('输出 tokens',fmtN(s.output_tokens),'ac')+
       kpi('缓存读 tokens',fmtN(s.cached_tokens))+
+      kpi('缓存命中率',s.cache_hit_rate==null?'-':s.cache_hit_rate+'%','ok')+
       kpi('推理 tokens',fmtN(s.reasoning_tokens))+
       kpi('上游成本',fmtC(s.cost_usd),'ok')+
       kpi('平均延迟',(s.avg_latency_ms||0)+' ms');
@@ -816,9 +821,11 @@ async function load(){
       '<td class="num" style="color:var(--ok)">'+m.success+'</td>'+
       '<td class="num" style="color:'+(m.errors?'var(--bad)':'inherit')+'">'+m.errors+'</td>'+
       '<td class="num">'+fmtN(m.input)+'</td><td class="num">'+fmtN(m.output)+'</td>'+
-      '<td class="num">'+fmtN(m.cached)+'</td><td class="num">'+fmtN(m.reasoning)+'</td>'+
+      '<td class="num">'+fmtN(m.cached)+'</td>'+
+      '<td class="num">'+(m.cache_hit_rate==null?'-':m.cache_hit_rate+'%')+'</td>'+
+      '<td class="num">'+fmtN(m.reasoning)+'</td>'+
       '<td class="num">'+fmtC(m.cost_usd)+'</td></tr>').join('')
-      ||'<tr><td colspan="9" class="muted">暂无数据</td></tr>';
+      ||'<tr><td colspan="10" class="muted">暂无数据</td></tr>';
     $('#recent tbody').innerHTML=(r.rows||[]).map(x=>{
       const d=new Date(x.ts*1000);
       const st=x.status<400?'<span class="st ok">✓ '+x.status+'</span>'
