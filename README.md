@@ -1,6 +1,6 @@
 # commandcode-go-proxy
 
-[![Release](https://img.shields.io/badge/Release-v0.0.9-blue)](https://github.com/Nice9z/commandcode-go-proxy/releases)
+[![Release](https://img.shields.io/github/v/release/Nice9z/commandcode-go-proxy)](https://github.com/Nice9z/commandcode-go-proxy/releases)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue)](https://www.python.org/)
 [![API](https://img.shields.io/badge/API-OpenAI_Compatible-purple)](#快速开始)
 [![Dashboard](https://img.shields.io/badge/Dashboard-中文看板-teal)](#快速开始)
