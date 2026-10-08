@@ -54,6 +54,8 @@ systemctl restart cc-go-proxy     # 重启服务
 nano /etc/cc-go-proxy.env         # 改 API 密钥或网关密码，改完重启
 ```
 
+版本有更新时，重新跑一遍上面那条安装命令就会自动换新（配置都在）。面板底部会显示当前版本号，有新版本时会提示你。
+
 ---
 
 ### 方式二：在本机直接运行（Windows / macOS / Linux）
@@ -93,16 +95,6 @@ CMD_CODE_TOKEN=user_你的API密钥 python3 proxy.py
 | 模型 | 不填默认 GLM-5.3 Flash；要换就填模型名，如 `moonshotai/Kimi-K3` |
 
 ---
-
-## 更新
-
-脚本持续迭代，VPS 上升级只需一条命令（你填过的 API 密钥和网关密码都保留，只更新程序并重启）：
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Nice9z/commandcode-go-proxy/main/deploy.sh | bash -s -- update
-```
-
-或重新完整跑一遍 `deploy.sh`（会保留 `/etc/cc-go-proxy.env` 里的配置重新写入）。
 
 ## 环境变量
 

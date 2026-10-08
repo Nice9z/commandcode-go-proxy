@@ -18,23 +18,6 @@ RAW_BASES=(
 
 [ "$(id -u)" = "0" ] || { echo "请用 root 运行 (sudo bash)"; exit 1; }
 
-# 重跑本脚本 = 升级: 保留 /etc 配置, 只更新 proxy.py 并重启
-if [ "$1" = "update" ]; then
-  echo "[*] 更新 proxy.py..."
-  OK=""
-  for base in "${RAW_BASES[@]}"; do
-    if curl -fsSL --max-time 60 -o /tmp/cc-proxy-new.py "$base/proxy.py?v=$(date +%s)" \
-       && grep -q "alpha/generate" /tmp/cc-proxy-new.py; then
-      mv /tmp/cc-proxy-new.py "$INSTALL_DIR/proxy.py"; OK=1; break
-    fi
-  done
-  [ -n "$OK" ] || { echo "下载失败"; exit 1; }
-  systemctl restart "$APP"
-  sleep 2
-  systemctl is-active --quiet "$APP" && echo "[OK] 已更新并重启" || { journalctl -u "$APP" -n 20 --no-pager; exit 1; }
-  curl -s "http://127.0.0.1:${CMD_CODE_PORT:-18787}/healthz" | head -c 200; echo ""
-  exit 0
-fi
 
 ask() { read -r -p "$1" "$2" < /dev/tty; }
 token_ok() { case "$1" in user_*) return 0 ;; *) return 1 ;; esac; }
@@ -78,6 +61,17 @@ else
   [ -n "$OK" ] || { echo "下载失败，检查网络后重试"; exit 1; }
 fi
 PROXY="$INSTALL_DIR/proxy.py"
+
+# 版本检查：本地 vs GitHub 最新 Release，有新版本就自动换上
+LOCAL_VER="$(grep -oE 'APP_VERSION = "[0-9.]+"' "$PROXY" 2>/dev/null | grep -oE '[0-9.]+' || echo 0)"
+GH_VER="$(curl -sS --max-time 10 "https://api.github.com/repos/Nice9z/commandcode-go-proxy/releases/latest" 2>/dev/null | grep -oE '"tag_name": *"v?[0-9.]+"' | grep -oE '[0-9.]+' || echo '')"
+if [ -n "$GH_VER" ]; then
+  if [ "$LOCAL_VER" = "$GH_VER" ]; then
+    echo "[*] 已是最新版本 v$LOCAL_VER"
+  else
+    echo "[*] 发现新版本 v$GH_VER（本地 v$LOCAL_VER），已自动换上"
+  fi
+fi
 
 # ---- 3. API 密钥 ----
 TOKEN="${CMD_CODE_TOKEN:-}"
@@ -157,7 +151,7 @@ curl -s --max-time 90 -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
 echo ""
 echo ""
 echo "=============================================="
-echo " 部署完成!"
+echo " 部署完成! (版本 v${LOCAL_VER:-unknown})"
 echo "   API:       http://<VPS_IP>:$PORT/v1"
 echo "   看板:      http://<VPS_IP>:$PORT/dashboard"
 echo "   客户端key: $GKEY   (只显示这一次, 存好)"

@@ -102,6 +102,31 @@ DB_PATH = os.environ.get("CMD_CODE_DB") or os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "cc_proxy_usage.db")
 CURL = os.environ.get("CMD_CODE_CURL") or (
     shutil.which("curl.exe") or shutil.which("curl") or "curl")
+
+APP_VERSION = "0.0.3"          # keep in sync with the latest GitHub Release tag
+_REPO = "Nice9z/commandcode-go-proxy"
+_latest_cache = {"v": None, "ts": 0.0}
+
+
+def latest_github_version():
+    """Latest release tag from the GitHub API, cached 1h; None on any failure."""
+    if time.time() - _latest_cache["ts"] < 3600:
+        return _latest_cache["v"]
+    v = None
+    try:
+        r = subprocess.run(
+            [CURL, "-sS", "--max-time", "10",
+             "https://api.github.com/repos/%s/releases/latest" % _REPO],
+            capture_output=True, timeout=15)
+        d = json.loads(r.stdout.decode("utf-8", "replace") or "{}")
+        tag = (d.get("tag_name") or "").lstrip("v")
+        if tag:
+            v = tag
+    except Exception:  # noqa: BLE001 - offline / rate-limited: just skip
+        v = None
+    _latest_cache["v"] = v
+    _latest_cache["ts"] = time.time()
+    return v
 # anti-ban knobs: bounded transparent retry before first byte, concurrency cap,
 # stable per-key session rotating on a 12h window (+deterministic jitter)
 UPSTREAM_RETRY_MAX = int(os.environ.get("CMD_CODE_UPSTREAM_RETRY_MAX", "2"))
@@ -713,6 +738,7 @@ code{background:#1a2029;border-radius:4px;padding:1px 6px;font-size:12px}
 端点：<code>POST /v1/chat/completions</code>（OpenAI 兼容）
 · <code>GET /v1/models</code> · 本页 <code>GET /dashboard</code>
 · 成本为上游 <code>gateway.cost</code> 真实美元价，Go 计划 credit 扣除另有倍率
+· <span id="ver">版本读取中…</span>
 </div>
 <script>
 let RANGE='all';
@@ -767,6 +793,17 @@ async function load(){
       '</tr>'}).join('')
       ||'<tr><td colspan="10" class="muted">暂无请求</td></tr>';
     $('#upd').textContent='更新于 '+new Date().toLocaleTimeString('zh-CN',{hour12:false});
+    if(!window._verLoaded){
+      window._verLoaded=true;
+      fetch('/healthz',{headers:authHeaders()}).then(x=>x.json()).then(h=>{
+        const el=document.getElementById('ver');
+        el.textContent='当前版本 v'+h.app_version;
+        if(h.latest_version && h.latest_version!==h.app_version){
+          el.innerHTML='当前版本 v'+h.app_version+' - <b style="color:var(--warn,#d29922)">有新版本 v'+h.latest_version+
+            '，更新方法见 README</b>';
+        }
+      }).catch(()=>{});
+    }
   }catch(e){
     $('#dot').className='dot err';$('#sub').textContent='连接失败: '+e;
   }
@@ -859,6 +896,8 @@ class Handler(BaseHTTPRequestHandler):
                     db_ok = False
                 self._json(200, {"ok": True, "upstream": UPSTREAM,
                                  "version_header": VERSION,
+                                 "app_version": APP_VERSION,
+                                 "latest_version": latest_github_version(),
                                  "token_set": bool(TOKEN),
                                  "gateway_key_required": bool(PROXY_KEY),
                                  "db": DB_PATH, "db_writable": db_ok})
