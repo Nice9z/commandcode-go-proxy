@@ -103,7 +103,7 @@ DB_PATH = os.environ.get("CMD_CODE_DB") or os.path.join(
 CURL = os.environ.get("CMD_CODE_CURL") or (
     shutil.which("curl.exe") or shutil.which("curl") or "curl")
 
-APP_VERSION = "0.0.9"          # keep in sync with the latest GitHub Release tag
+APP_VERSION = "0.1.0"          # keep in sync with the latest GitHub Release tag
 
 # common shorthand -> canonical model ids (Go plan). Keeps clients that
 # send bare names like "glm-5.3-flash" from 404-ing upstream.
@@ -684,72 +684,117 @@ REC = Recorder()
 DASHBOARD_HTML = """<!doctype html>
 <html lang="zh"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Command Code 网关看板</title>
+<title>Command Code 看板</title>
 <style>
-:root{--bg:#0d1117;--card:#161b22;--fg:#e6edf3;--muted:#8b949e;--line:#21262d;
---accent:#58a6ff;--ok:#3fb950;--bad:#f85149}
+:root{
+  --md-primary:#6750A4;--md-on-primary:#fff;--md-primary-c:#EADDFF;
+  --md-surface:#FEF7FF;--md-surface-c:#F3EDF7;--md-bg:#F7F2FA;
+  --md-on:#1D1B20;--md-on-var:#49454F;--md-outline:#CAC4D0;
+  --md-ok:#386A20;--md-ok-c:#B7F397;--md-err:#B3261E;--md-err-c:#F9DEDC;
+  --md-radius:16px;
+}
+[data-theme="dark"]{
+  --md-primary:#D0BCFF;--md-on-primary:#381E72;--md-primary-c:#4F378B;
+  --md-surface:#1D1B20;--md-surface-c:#28242C;--md-bg:#141218;
+  --md-on:#E6E0E9;--md-on-var:#CAC4D0;--md-outline:#49454F;
+  --md-ok:#A6D385;--md-ok-c:#284C19;--md-err:#F2B8B5;--md-err-c:#601410;
+}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,
-"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;padding:20px}
-h1{font-size:18px;font-weight:600;display:flex;align-items:center;gap:10px}
-.dot{width:9px;height:9px;border-radius:50%;background:var(--ok);display:inline-block}
-.dot.err{background:var(--bad)}
-.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:14px 0}
-button{background:var(--card);color:var(--fg);border:1px solid var(--line);
-border-radius:6px;padding:5px 12px;cursor:pointer;font-size:13px}
-button.on{border-color:var(--accent);color:var(--accent)}
-label{color:var(--muted);font-size:13px;display:flex;gap:5px;align-items:center}
-.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
-gap:10px;margin:14px 0}
-.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;
-padding:12px 14px}
-.kpi .v{font-size:20px;font-weight:600;margin-top:2px}
-.kpi .v.ok{color:var(--ok)}.kpi .v.ac{color:var(--accent)}
-.kpi .l{color:var(--muted);font-size:12px}
-h2{font-size:14px;color:var(--muted);margin:18px 0 8px;font-weight:600}
-table{width:100%;border-collapse:collapse;background:var(--card);
-border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:13px}
-th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--line)}
-th{color:var(--muted);font-weight:500;background:#1a2029;white-space:nowrap}
-td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+body{background:var(--md-bg);color:var(--md-on);
+  font:15px/1.5 "Roboto","Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  padding:16px;max-width:1200px;margin:0 auto;
+  transition:background .25s,color .25s}
+.top{display:flex;align-items:center;gap:12px;margin-bottom:20px}
+.top h1{font-size:22px;font-weight:500;letter-spacing:.2px}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--md-ok);
+  display:inline-block;flex-shrink:0}
+.dot.err{background:var(--md-err)}
+#sub{color:var(--md-on-var);font-size:13px}
+.spacer{flex:1}
+.iconbtn{background:var(--md-surface-c);border:none;color:var(--md-on);
+  width:44px;height:44px;border-radius:50%;cursor:pointer;display:flex;
+  align-items:center;justify-content:center;transition:transform .15s}
+.iconbtn:hover{transform:scale(1.08)}
+.iconbtn svg{width:22px;height:22px}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px}
+.controls button{background:var(--md-surface-c);color:var(--md-on);
+  border:1px solid transparent;border-radius:20px;padding:8px 16px;
+  cursor:pointer;font-size:13.5px;transition:all .2s}
+.controls button.on{background:var(--md-primary);color:var(--md-on-primary)}
+.controls label{color:var(--md-on-var);font-size:13px;display:flex;
+  gap:6px;align-items:center;margin-left:auto}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));
+  gap:10px;margin-bottom:20px}
+.kpi{background:var(--md-surface);border-radius:var(--md-radius);
+  padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.kpi .l{color:var(--md-on-var);font-size:12px;margin-bottom:4px}
+.kpi .v{font-size:22px;font-weight:500;font-variant-numeric:tabular-nums}
+.kpi .v.ok{color:var(--md-ok)}.kpi .v.ac{color:var(--md-primary)}
+h2{font-size:15px;font-weight:500;color:var(--md-on-var);
+  margin:4px 0 10px}
+.card{background:var(--md-surface);border-radius:var(--md-radius);
+  box-shadow:0 1px 3px rgba(0,0,0,.12);margin-bottom:20px;
+  overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:640px}
+th,td{padding:11px 14px;text-align:left;white-space:nowrap}
+th{color:var(--md-on-var);font-weight:500;font-size:12.5px;
+  border-bottom:1px solid var(--md-outline)}
+td{border-bottom:1px solid var(--md-surface-c)}
 tr:last-child td{border-bottom:none}
-.st{font-weight:600}.st.ok{color:var(--ok)}.st.bad{color:var(--bad)}
-.errtx{color:var(--bad);font-size:12px;max-width:320px;overflow:hidden;
-text-overflow:ellipsis;white-space:nowrap}
-.muted{color:var(--muted)}
-.foot{margin-top:16px;color:var(--muted);font-size:12px}
-code{background:#1a2029;border-radius:4px;padding:1px 6px;font-size:12px}
-.gh{color:var(--muted);display:inline-flex;margin-left:auto}
-.gh:hover{color:var(--fg)}
-#login{position:fixed;inset:0;background:rgba(1,4,9,.82);display:flex;
-align-items:center;justify-content:center;z-index:99;backdrop-filter:blur(4px)}
-#login .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
-padding:32px 36px;width:360px;max-width:90vw;box-shadow:0 16px 48px rgba(0,0,0,.5)}
-#login h3{font-size:16px;margin-bottom:6px}
-#login p{color:var(--muted);font-size:12.5px;margin-bottom:16px;line-height:1.6}
-#login input{width:100%;background:#0d1117;border:1px solid var(--line);color:var(--fg);
-border-radius:8px;padding:10px 12px;font-size:14px;outline:none;box-sizing:border-box}
-#login input:focus{border-color:var(--accent)}
-#login .err{color:var(--bad);font-size:12.5px;margin-top:10px;min-height:18px}
-#login button{width:100%;margin-top:14px;background:var(--accent);color:#04121f;
-border:none;border-radius:8px;padding:11px;font-size:14px;font-weight:600;cursor:pointer}
-#login button:hover{filter:brightness(1.1)}
+th.num,td.num{text-align:right;font-variant-numeric:tabular-nums}
+.st{display:inline-flex;align-items:center;gap:5px;font-weight:500}
+.st.ok{color:var(--md-ok)}.st.bad{color:var(--md-err)}
+.errtx{color:var(--md-err);font-size:12.5px;max-width:260px;
+  overflow:hidden;text-overflow:ellipsis}
+.muted{color:var(--md-on-var)}
+.foot{color:var(--md-on-var);font-size:12.5px;padding:8px 4px 24px;
+  display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center}
+.foot a{color:var(--md-primary);text-decoration:none;display:inline-flex;
+  align-items:center;gap:6px}
+#login{position:fixed;inset:0;background:var(--md-bg);display:none;
+  align-items:center;justify-content:center;z-index:99}
+#login .card{background:var(--md-surface);border-radius:28px;
+  padding:36px 32px;width:340px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,.25)}
+#login h3{font-size:20px;font-weight:500;margin-bottom:8px}
+#login p{color:var(--md-on-var);font-size:13px;margin-bottom:20px;line-height:1.6}
+#login code{background:var(--md-surface-c);border-radius:4px;padding:1px 5px;
+  font-size:11.5px}
+#login input{width:100%;background:var(--md-surface-c);border:none;
+  border-bottom:2px solid var(--md-outline);color:var(--md-on);
+  border-radius:8px 8px 0 0;padding:12px 14px;font-size:15px;outline:none}
+#login input:focus{border-bottom-color:var(--md-primary)}
+#login .err{color:var(--md-err);font-size:12.5px;margin-top:10px;min-height:18px}
+#login button{width:100%;margin-top:12px;background:var(--md-primary);
+  color:var(--md-on-primary);border:none;border-radius:100px;padding:13px;
+  font-size:14.5px;font-weight:500;cursor:pointer;letter-spacing:.3px}
+@media(max-width:640px){
+  body{padding:12px}
+  .top h1{font-size:18px}
+  .kpis{grid-template-columns:repeat(2,1fr)}
+  .kpi .v{font-size:19px}
+  .controls label{margin-left:0}
+}
+@media(prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){--md-primary:#D0BCFF;--md-on-primary:#381E72;
+    --md-primary-c:#4F378B;--md-surface:#1D1B20;--md-surface-c:#28242C;
+    --md-bg:#141218;--md-on:#E6E0E9;--md-on-var:#CAC4D0;--md-outline:#49454F;
+    --md-ok:#A6D385;--md-ok-c:#284C19;--md-err:#F2B8B5;--md-err-c:#601410}
+}
 </style></head><body>
-<h1><span class="dot" id="dot"></span>Command Code 网关看板
-<span class="muted" style="font-size:12px" id="sub"></span>
-<a class="gh" href="https://github.com/Nice9z/commandcode-go-proxy"
-   target="_blank" rel="noopener" title="GitHub 仓库">
-<svg viewBox="0 0 16 16" width="22" height="22" fill="currentColor"
-     aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47
-     7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-
-     .09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.
-     72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95
-     0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18
-     1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08
-     2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54
-     1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16
-     8c0-4.42-3.58-8-8-8Z"/></svg></a></h1>
-<div class="bar">
+<div class="top">
+  <span class="dot" id="dot"></span>
+  <h1>Command Code 看板</h1>
+  <span id="sub" class="muted">连接中…</span>
+  <span class="spacer"></span>
+  <button class="iconbtn" id="theme" title="切换深浅色">
+    <svg id="themeIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.39 5.39 0 0 1-4.4 2.26 5.4 5.4 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg>
+  </button>
+  <a class="iconbtn" href="https://github.com/Nice9z/commandcode-go-proxy"
+     target="_blank" rel="noopener" title="GitHub 仓库">
+    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+  </a>
+</div>
+<div class="controls">
   <button data-r="today">今天</button>
   <button data-r="24h">24小时</button>
   <button data-r="7d">7天</button>
@@ -757,36 +802,57 @@ border:none;border-radius:8px;padding:11px;font-size:14px;font-weight:600;cursor
   <button data-r="lastmonth">上月</button>
   <button data-r="all" class="on">全部</button>
   <label><input type="checkbox" id="auto" checked> 自动刷新(5s)</label>
-  <span class="muted" id="upd"></span>
 </div>
 <div class="kpis" id="kpis"></div>
 <h2>按模型</h2>
-<table id="models"><thead><tr>
+<div class="card"><table id="models"><thead><tr>
 <th>模型</th><th class="num">请求</th><th class="num">成功</th>
 <th class="num">失败</th><th class="num">输入</th><th class="num">输出</th>
-<th class="num">缓存读</th><th class="num">命中率</th><th class="num">推理</th><th class="num">成本USD</th>
-</tr></thead><tbody></tbody></table>
+<th class="num">缓存读</th><th class="num">命中率</th><th class="num">推理</th>
+<th class="num">成本 USD</th>
+</tr></thead><tbody></tbody></table></div>
 <h2>最近请求</h2>
-<table id="recent"><thead><tr>
+<div class="card"><table id="recent"><thead><tr>
 <th>时间</th><th>模型</th><th>状态</th><th class="num">输入</th>
 <th class="num">输出</th><th class="num">缓存</th><th class="num">推理</th>
-<th class="num">成本USD</th><th class="num">延迟</th><th>错误</th>
-</tr></thead><tbody></tbody></table>
+<th class="num">成本 USD</th><th class="num">延迟</th><th>错误</th>
+</tr></thead><tbody></tbody></table></div>
 <div class="foot">
-端点：<code>POST /v1/chat/completions</code>（OpenAI 兼容）
-· <code>GET /v1/models</code> · 本页 <code>GET /dashboard</code>
-· 成本为上游 <code>gateway.cost</code> 真实美元价，Go 计划 credit 扣除另有倍率
-· 当前版本 __APP_VERSION_PLACEHOLDER__<span id="ver"></span>
+  <span>接口 <code>/v1/chat/completions</code>（OpenAI 兼容）</span>
+  <span>更新时间 <span id="upd">-</span></span>
+  <span>版本 v__APP_VERSION__</span>
+  <a href="https://github.com/Nice9z/commandcode-go-proxy" target="_blank">GitHub 仓库</a>
 </div>
 <script>
+/* theme */
+(function(){
+  const saved=localStorage.getItem('cc_theme');
+  if(saved)document.documentElement.setAttribute('data-theme',saved);
+})();
+document.getElementById('theme').onclick=()=>{
+  const cur=document.documentElement.getAttribute('data-theme')||
+    (matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');
+  const next=cur==='dark'?'light':'dark';
+  document.documentElement.setAttribute('data-theme',next);
+  localStorage.setItem('cc_theme',next);
+  paintTheme();
+};
+function paintTheme(){
+  const dark=(document.documentElement.getAttribute('data-theme')||
+    (matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'))==='dark';
+  document.getElementById('themeIcon').innerHTML=dark
+    ?'<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>'
+    :'<path d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.39 5.39 0 0 1-4.4 2.26 5.4 5.4 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/>';
+}
+paintTheme();
+/* data */
 let RANGE='all';
 const $=s=>document.querySelector(s);
 function authHeaders(){const k=localStorage.getItem('cc_key');
   return k?{'Authorization':'Bearer '+k}:{}}
-function fmtN(n){if(n==null)return'-';if(n>=1e6)return(n/1e6).toFixed(1)+'M';
+function fmtN(n){if(n==null||n===undefined)return'-';if(n>=1e6)return(n/1e6).toFixed(1)+'M';
   if(n>=1e4)return(n/1e3).toFixed(1)+'k';return n.toLocaleString()}
-function fmtC(c){if(c==null)return'-';
-  if(c===0)return'0';
+function fmtC(c){if(c==null)return'-';if(c===0)return'0';
   return'$'+parseFloat(c.toFixed(6)).toString()}
 function kpi(l,v,cls){return '<div class="kpi"><div class="l">'+l+'</div>'+
   '<div class="v '+(cls||'')+'">'+v+'</div></div>'}
@@ -803,7 +869,7 @@ async function load(){
     s=await s.json();
     const r=await fetch('/api/recent?limit=50',{headers:authHeaders()}).then(x=>x.json());
     $('#dot').className='dot';
-    $('#sub').textContent='已连接';
+    $('#sub').textContent='运行中';
     const sr=(s.success||0)+(s.errors||0);
     const rate=sr?Math.round(100*s.success/sr):100;
     $('#kpis').innerHTML=
@@ -811,15 +877,13 @@ async function load(){
       kpi('成功率',rate+'%','ok')+
       kpi('输入 tokens',fmtN(s.input_tokens))+
       kpi('输出 tokens',fmtN(s.output_tokens),'ac')+
-      kpi('缓存读 tokens',fmtN(s.cached_tokens))+
       kpi('缓存命中率',s.cache_hit_rate==null?'-':s.cache_hit_rate+'%','ok')+
       kpi('推理 tokens',fmtN(s.reasoning_tokens))+
-      kpi('上游成本',fmtC(s.cost_usd),'ok')+
       kpi('平均延迟',(s.avg_latency_ms||0)+' ms');
     $('#models tbody').innerHTML=(s.models||[]).map(m=>
       '<tr><td>'+esc(m.model)+'</td><td class="num">'+m.requests+'</td>'+
-      '<td class="num" style="color:var(--ok)">'+m.success+'</td>'+
-      '<td class="num" style="color:'+(m.errors?'var(--bad)':'inherit')+'">'+m.errors+'</td>'+
+      '<td class="num" style="color:var(--md-ok)">'+m.success+'</td>'+
+      '<td class="num" style="color:'+(m.errors?'var(--md-err)':'inherit')+'">'+m.errors+'</td>'+
       '<td class="num">'+fmtN(m.input)+'</td><td class="num">'+fmtN(m.output)+'</td>'+
       '<td class="num">'+fmtN(m.cached)+'</td>'+
       '<td class="num">'+(m.cache_hit_rate==null?'-':m.cache_hit_rate+'%')+'</td>'+
@@ -839,34 +903,25 @@ async function load(){
       '<td class="errtx" title="'+esc(x.error)+'">'+esc(x.error||'')+'</td>'+
       '</tr>'}).join('')
       ||'<tr><td colspan="10" class="muted">暂无请求</td></tr>';
-    $('#upd').textContent='更新于 '+new Date().toLocaleTimeString('zh-CN',{hour12:false});
-    if(!window._verLoaded){
-      window._verLoaded=true;
-      fetch('/healthz',{headers:authHeaders()}).then(x=>x.json()).then(h=>{
-        const el=document.getElementById('ver');
-        if(h.latest_version && h.latest_version!==h.app_version){
-          el.innerHTML=' - <b style="color:#d29922">有新版本 v'+h.latest_version+'，在服务器重新运行部署脚本即可更新</b>';
-        }
-      }).catch(()=>{});
-    }
+    $('#upd').textContent=new Date().toLocaleTimeString('zh-CN',{hour12:false});
   }catch(e){
-    $('#dot').className='dot err';$('#sub').textContent='连接失败: '+e;
+    $('#dot').className='dot err';$('#sub').textContent='连接失败';
   }
 }
+document.querySelectorAll('button[data-r]').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('button[data-r]').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');RANGE=b.dataset.r;load();});
+setInterval(()=>{if($('#auto').checked && document.getElementById('login').style.display!=='flex')load()},5000);
 window.addEventListener('DOMContentLoaded',()=>{
   if(!localStorage.getItem('cc_key')){
     document.getElementById('login').style.display='flex';
     setTimeout(()=>document.getElementById('lkey').focus(),50);
   }else{load();}
 });
-document.querySelectorAll('button[data-r]').forEach(b=>b.onclick=()=>{
-  document.querySelectorAll('button[data-r]').forEach(x=>x.classList.remove('on'));
-  b.classList.add('on');RANGE=b.dataset.r;load();});
-setInterval(()=>{if($('#auto').checked && document.getElementById('login').style.display!=='flex')load()},5000);
 </script>
 <div id="login" style="display:none">
   <div class="card">
-    <h3>Command Code 网关看板</h3>
+    <h3>Command Code 看板</h3>
     <p>此面板需要网关密码。在服务器上执行
     <code>cat /etc/cc-go-proxy.env</code> 查看 <code>CMD_CODE_KEY=</code> 后面的值。</p>
     <input type="password" id="lkey" placeholder="输入网关密码" autocomplete="off">
@@ -874,17 +929,6 @@ setInterval(()=>{if($('#auto').checked && document.getElementById('login').style
     <button onclick="doLogin()">进入面板</button>
   </div>
 </div>
-<script>
-document.getElementById('lkey').addEventListener('keydown',e=>{
-  if(e.key==='Enter')doLogin();});
-function doLogin(){
-  const k=document.getElementById('lkey').value.trim();
-  if(!k){document.getElementById('lerr').textContent='请输入密码';return;}
-  localStorage.setItem('cc_key',k);
-  document.getElementById('login').style.display='none';
-  load();
-}
-</script>
 </body></html>"""
 
 
@@ -924,8 +968,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         p = urllib.parse.urlparse(self.path).path.rstrip("/") or "/"
         if p == "/dashboard":
-            body = DASHBOARD_HTML.replace("__APP_VERSION_PLACEHOLDER__",
-                                          "v" + APP_VERSION).encode()
+            body = DASHBOARD_HTML.replace("__APP_VERSION__", APP_VERSION).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
