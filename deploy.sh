@@ -65,12 +65,24 @@ PROXY="$INSTALL_DIR/proxy.py"
 # 版本检查：本地 vs GitHub 最新 Release，有新版本就自动换上
 LOCAL_VER="$(grep -oE 'APP_VERSION = "[0-9.]+"' "$PROXY" 2>/dev/null | grep -oE '[0-9.]+' || echo 0)"
 GH_VER="$(curl -sS --max-time 10 "https://api.github.com/repos/Nice9z/commandcode-go-proxy/releases/latest" 2>/dev/null | grep -oE '"tag_name": *"v?[0-9.]+"' | grep -oE '[0-9.]+' || echo '')"
-if [ -n "$GH_VER" ]; then
-  if [ "$LOCAL_VER" = "$GH_VER" ]; then
-    echo "[*] 已是最新版本 v$LOCAL_VER"
+if [ -n "$GH_VER" ] && [ "$LOCAL_VER" != "$GH_VER" ]; then
+  echo "[*] 发现新版本 v$GH_VER（当前 v${LOCAL_VER:-无}），下载新版..."
+  DL=""
+  for base in "${RAW_BASES[@]}"; do
+    if curl -fsSL --max-time 60 -o "$INSTALL_DIR/proxy.py.tmp" "$base/proxy.py?v=$(date +%s)" \
+       && grep -q "alpha/generate" "$INSTALL_DIR/proxy.py.tmp" \
+       && grep -q "APP_VERSION = \"$GH_VER\"" "$INSTALL_DIR/proxy.py.tmp"; then
+      mv "$INSTALL_DIR/proxy.py.tmp" "$INSTALL_DIR/proxy.py"; DL=1; break
+    fi
+    rm -f "$INSTALL_DIR/proxy.py.tmp"
+  done
+  if [ -n "$DL" ]; then
+    echo "[*] 已更新到 v$GH_VER"
   else
-    echo "[*] 发现新版本 v$GH_VER（本地 v$LOCAL_VER），已自动换上"
+    echo "[!] 自动更新失败，继续用现有版本 v$LOCAL_VER"
   fi
+elif [ -n "$GH_VER" ]; then
+  echo "[*] 已是最新版本 v$LOCAL_VER"
 fi
 
 # ---- 3. 配置：已有配置则全部保留，回车=不改 ----
