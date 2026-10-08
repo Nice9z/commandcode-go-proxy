@@ -40,12 +40,6 @@ curl -fsSL https://raw.githubusercontent.com/Nice9z/commandcode-go-proxy/main/de
 
 然后全自动：注册系统服务、开机自启、程序崩了自动拉起、发一条测试请求验证服务正常。完成后屏幕上会显示你的接口地址、面板地址和网关密码——**网关密码只显示这一次，记下来**。
 
-以后升级到新版本，还是 SSH 上 VPS 执行一条命令（API 密钥和网关密码都保留）：
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Nice9z/commandcode-go-proxy/main/deploy.sh | bash -s -- update
-```
-
 常用管理命令：
 
 ```bash
