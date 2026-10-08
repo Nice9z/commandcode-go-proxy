@@ -103,7 +103,7 @@ DB_PATH = os.environ.get("CMD_CODE_DB") or os.path.join(
 CURL = os.environ.get("CMD_CODE_CURL") or (
     shutil.which("curl.exe") or shutil.which("curl") or "curl")
 
-APP_VERSION = "0.0.5"          # keep in sync with the latest GitHub Release tag
+APP_VERSION = "0.0.6"          # keep in sync with the latest GitHub Release tag
 _REPO = "Nice9z/commandcode-go-proxy"
 _latest_cache = {"v": None, "ts": 0.0}
 
@@ -738,7 +738,7 @@ code{background:#1a2029;border-radius:4px;padding:1px 6px;font-size:12px}
 端点：<code>POST /v1/chat/completions</code>（OpenAI 兼容）
 · <code>GET /v1/models</code> · 本页 <code>GET /dashboard</code>
 · 成本为上游 <code>gateway.cost</code> 真实美元价，Go 计划 credit 扣除另有倍率
-· <span id="ver">版本读取中…</span>
+· 当前版本 __APP_VERSION_PLACEHOLDER__<span id="ver"></span>
 </div>
 <script>
 let RANGE='all';
@@ -755,9 +755,14 @@ function kpi(l,v,cls){return '<div class="kpi"><div class="l">'+l+'</div>'+
 function esc(s){return (s||'').replace(/"/g,'&quot;').replace(/</g,'&lt;')}
 async function load(){
   try{
-    const [s,r]=await Promise.all([
-      fetch('/api/stats?range='+RANGE,{headers:authHeaders()}).then(x=>x.json()),
-      fetch('/api/recent?limit=50',{headers:authHeaders()}).then(x=>x.json())]);
+    let s=await fetch('/api/stats?range='+RANGE,{headers:authHeaders()});
+    if(s.status===401){
+      const k=prompt('请输入网关密码（服务器上 cat /etc/cc-go-proxy.env 查看）');
+      if(k){localStorage.setItem('cc_key',k);return load();}
+      $('#sub').textContent='未授权：需要网关密码';return;
+    }
+    s=await s.json();
+    const r=await fetch('/api/recent?limit=50',{headers:authHeaders()}).then(x=>x.json());
     $('#dot').className='dot';
     $('#sub').textContent='已连接';
     const sr=(s.success||0)+(s.errors||0);
@@ -797,10 +802,8 @@ async function load(){
       window._verLoaded=true;
       fetch('/healthz',{headers:authHeaders()}).then(x=>x.json()).then(h=>{
         const el=document.getElementById('ver');
-        el.textContent='当前版本 v'+h.app_version;
         if(h.latest_version && h.latest_version!==h.app_version){
-          el.innerHTML='当前版本 v'+h.app_version+' - <b style="color:var(--warn,#d29922)">有新版本 v'+h.latest_version+
-            '，更新方法见 README</b>';
+          el.innerHTML=' - <b style="color:#d29922">有新版本 v'+h.latest_version+'，在服务器重新运行部署脚本即可更新</b>';
         }
       }).catch(()=>{});
     }
@@ -852,7 +855,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         p = urllib.parse.urlparse(self.path).path.rstrip("/") or "/"
         if p == "/dashboard":
-            body = DASHBOARD_HTML.encode()
+            body = DASHBOARD_HTML.replace("__APP_VERSION_PLACEHOLDER__",
+                                          "v" + APP_VERSION).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
