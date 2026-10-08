@@ -15,7 +15,7 @@ OpenAI 客户端 ──POST /v1/chat/completions──▶ 本代理 ──翻译
 
 ## 快速开始
 
-前置：去 [commandcode.ai/settings/billing](https://commandcode.ai/settings/billing) 创建一个 API 密钥（`user_` 开头），复制好。
+前置：登录 [commandcode.ai](https://commandcode.ai) 后台，在设置里找到 API 密钥（API Keys）页面，创建一个新的 API 密钥（`user_` 开头），复制好。
 
 ---
 
