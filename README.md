@@ -26,7 +26,7 @@ python proxy.py
 ```bash
 # VPS 一键部署（Ubuntu/Debian，无需 clone，systemd 自启 + 冒烟验证）:
 curl -fsSL https://raw.githubusercontent.com/Nice9z/commandcode-go-proxy/main/deploy.sh | bash
-# 脚本依次要你输入: user_ token（手动粘贴）→ 网关 key（回车自动生成）
+# 脚本依次要你输入: API 密钥（手动粘贴，user_ 开头）→ 网关 key（回车自动生成）
 # → 端口（回车 18787）→ 默认模型（回车 GLM-5.3 Flash），其余全自动
 # 国内网络下载慢会自动走 ghfast.top 镜像
 ```
@@ -53,7 +53,7 @@ curl -fsSL https://raw.githubusercontent.com/Nice9z/commandcode-go-proxy/main/de
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `CMD_CODE_TOKEN` | 空 | 上游 `user_*` token（服务端保密；不设则要求客户端 Bearer 直传） |
+| `CMD_CODE_TOKEN` | 空 | 上游 API 密钥（`user_*`，服务端保密；不设则要求客户端 Bearer 直传） |
 | `CMD_CODE_DEFAULT_MODEL` | `z-ai/glm-5.3-flash` | 客户端未指定模型时使用（Go 计划主力：1M 上下文 / $0.15/$0.50） |
 | `CMD_CODE_KEY` | 空 | 网关 key，客户端须以 `Bearer` 或 `?key=` 传入；**公网部署必设** |
 | `CMD_CODE_HOST` / `CMD_CODE_PORT` | `127.0.0.1` / `18787` | 监听地址/端口 |

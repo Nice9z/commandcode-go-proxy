@@ -79,12 +79,12 @@ else
 fi
 PROXY="$INSTALL_DIR/proxy.py"
 
-# ---- 3. 配置 ----
+# ---- 3. API 密钥 ----
 TOKEN="${CMD_CODE_TOKEN:-}"
 [ -n "$TOKEN" ] && echo "[*] 使用环境变量中的 token"
 while ! token_ok "${TOKEN:-}"; do
-  ask "粘贴你的 user_ API token (commandcode.ai/settings/billing): " TOKEN
-  token_ok "$TOKEN" || echo "  token 应该以 user_ 开头"
+  ask "粘贴你的 API 密钥 (user_ 开头, commandcode.ai/settings/billing): " TOKEN
+  token_ok "$TOKEN" || echo "  应该以 user_ 开头"
 done
 
 GKEY="${CMD_CODE_KEY:-}"
