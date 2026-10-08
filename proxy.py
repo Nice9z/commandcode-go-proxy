@@ -103,7 +103,7 @@ DB_PATH = os.environ.get("CMD_CODE_DB") or os.path.join(
 CURL = os.environ.get("CMD_CODE_CURL") or (
     shutil.which("curl.exe") or shutil.which("curl") or "curl")
 
-APP_VERSION = "0.0.6"          # keep in sync with the latest GitHub Release tag
+APP_VERSION = "0.0.7"          # keep in sync with the latest GitHub Release tag
 _REPO = "Nice9z/commandcode-go-proxy"
 _latest_cache = {"v": None, "ts": 0.0}
 
@@ -696,6 +696,19 @@ text-overflow:ellipsis;white-space:nowrap}
 code{background:#1a2029;border-radius:4px;padding:1px 6px;font-size:12px}
 .gh{color:var(--muted);display:inline-flex;margin-left:auto}
 .gh:hover{color:var(--fg)}
+#login{position:fixed;inset:0;background:rgba(1,4,9,.82);display:flex;
+align-items:center;justify-content:center;z-index:99;backdrop-filter:blur(4px)}
+#login .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+padding:32px 36px;width:360px;max-width:90vw;box-shadow:0 16px 48px rgba(0,0,0,.5)}
+#login h3{font-size:16px;margin-bottom:6px}
+#login p{color:var(--muted);font-size:12.5px;margin-bottom:16px;line-height:1.6}
+#login input{width:100%;background:#0d1117;border:1px solid var(--line);color:var(--fg);
+border-radius:8px;padding:10px 12px;font-size:14px;outline:none;box-sizing:border-box}
+#login input:focus{border-color:var(--accent)}
+#login .err{color:var(--bad);font-size:12.5px;margin-top:10px;min-height:18px}
+#login button{width:100%;margin-top:14px;background:var(--accent);color:#04121f;
+border:none;border-radius:8px;padding:11px;font-size:14px;font-weight:600;cursor:pointer}
+#login button:hover{filter:brightness(1.1)}
 </style></head><body>
 <h1><span class="dot" id="dot"></span>Command Code 网关看板
 <span class="muted" style="font-size:12px" id="sub"></span>
@@ -757,9 +770,10 @@ async function load(){
   try{
     let s=await fetch('/api/stats?range='+RANGE,{headers:authHeaders()});
     if(s.status===401){
-      const k=prompt('请输入网关密码（服务器上 cat /etc/cc-go-proxy.env 查看）');
-      if(k){localStorage.setItem('cc_key',k);return load();}
-      $('#sub').textContent='未授权：需要网关密码';return;
+      document.getElementById('login').style.display='flex';
+      document.getElementById('lerr').textContent='密码不正确，请重新输入';
+      $('#dot').className='dot err';$('#sub').textContent='未授权';
+      return;
     }
     s=await s.json();
     const r=await fetch('/api/recent?limit=50',{headers:authHeaders()}).then(x=>x.json());
@@ -811,12 +825,39 @@ async function load(){
     $('#dot').className='dot err';$('#sub').textContent='连接失败: '+e;
   }
 }
+window.addEventListener('DOMContentLoaded',()=>{
+  if(!localStorage.getItem('cc_key')){
+    document.getElementById('login').style.display='flex';
+    setTimeout(()=>document.getElementById('lkey').focus(),50);
+  }else{load();}
+});
 document.querySelectorAll('button[data-r]').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('button[data-r]').forEach(x=>x.classList.remove('on'));
   b.classList.add('on');RANGE=b.dataset.r;load();});
-setInterval(()=>{if($('#auto').checked)load()},5000);
-load();
-</script></body></html>"""
+setInterval(()=>{if($('#auto').checked && document.getElementById('login').style.display!=='flex')load()},5000);
+</script>
+<div id="login" style="display:none">
+  <div class="card">
+    <h3>Command Code 网关看板</h3>
+    <p>此面板需要网关密码。在服务器上执行
+    <code>cat /etc/cc-go-proxy.env</code> 查看 <code>CMD_CODE_KEY=</code> 后面的值。</p>
+    <input type="password" id="lkey" placeholder="输入网关密码" autocomplete="off">
+    <div class="err" id="lerr"></div>
+    <button onclick="doLogin()">进入面板</button>
+  </div>
+</div>
+<script>
+document.getElementById('lkey').addEventListener('keydown',e=>{
+  if(e.key==='Enter')doLogin();});
+function doLogin(){
+  const k=document.getElementById('lkey').value.trim();
+  if(!k){document.getElementById('lerr').textContent='请输入密码';return;}
+  localStorage.setItem('cc_key',k);
+  document.getElementById('login').style.display='none';
+  load();
+}
+</script>
+</body></html>"""
 
 
 class Handler(BaseHTTPRequestHandler):
