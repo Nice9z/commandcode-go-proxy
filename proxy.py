@@ -861,7 +861,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         if p in ("/api/stats", "/api/recent", "/v1/models", "/models",
                  "/healthz", "/v1/healthz"):
-            if not self._key_ok():
+            # healthz from the machine itself is always allowed (monitoring)
+            if p in ("/healthz", "/v1/healthz") and self.client_address[0] in ("127.0.0.1", "::1"):
+                pass
+            elif not self._key_ok():
                 self._json(401, {"error": {"message":
                     "invalid gateway key (set CMD_CODE_KEY server-side; "
                     "send it as Bearer or ?key=)"}})
