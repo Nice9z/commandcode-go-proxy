@@ -65,8 +65,11 @@ curl -fsSL https://raw.githubusercontent.com/Nice9z/commandcode-go-proxy/main/de
 ```bash
 journalctl -u cc-go-proxy -f      # 看实时日志
 systemctl restart cc-go-proxy     # 重启服务
+systemctl status cc-go-proxy      # 查看运行状态（VPS 重启后先看这个）
 nano /etc/cc-go-proxy.env         # 改 API 密钥或网关密码，改完重启
 ```
+
+VPS 重启后服务会自动启动。如果没起来，执行 `systemctl status cc-go-proxy` 看原因，再 `systemctl restart cc-go-proxy` 手动拉起。
 
 版本有更新时，重新跑一遍上面那条安装命令就会自动换新（配置都在）。面板底部会显示当前版本号，有新版本时会提示你。
 

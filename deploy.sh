@@ -152,8 +152,6 @@ umask 022
 cat > "/etc/systemd/system/${APP}.service" <<EOF
 [Unit]
 Description=Command Code Go-plan reverse proxy
-After=network-online.target
-Wants=network-online.target
 
 [Service]
 Type=simple
@@ -174,8 +172,15 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now "$APP"
+systemctl enable "$APP" >/dev/null 2>&1
+systemctl restart "$APP"
 sleep 2
+# 确认开机自启已注册（reboot 后会自动拉起）
+if systemctl is-enabled --quiet "$APP"; then
+  echo "[OK] 开机自启已注册"
+else
+  echo "[!] 开机自启注册失败，reboot 后需手动: systemctl enable --now $APP"
+fi
 
 # ---- 6. 自动测试（发测试请求，确认服务正常）----
 echo ""
