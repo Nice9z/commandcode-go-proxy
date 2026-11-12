@@ -132,7 +132,8 @@ CMD_CODE_TOKEN=user_你的API密钥 python3 proxy.py
 
 ## 功能
 
-- 两种上游传输（部署时选择）：
+- 三种上游传输（部署时选择）：
+  - `auto`（推荐）：工具类请求走 `http`（省额度），无工具请求按 `CMD_CODE_CLI_SHARE`（默认 15%）抽一部分走真 CLI，且每天 CLI token 超过 `CMD_CODE_CLI_DAILY_TOKENS`（默认 30 万）后自动全走 http。看板"通道"列可看到每次实际走的哪条
   - `cli`（推荐）：直接驱动官方 Command Code CLI 的 headless 模式发请求。TLS 指纹、HTTP/2、headers、信封、会话生命周期全部由官方二进制产生，不伪造任何特征
   - `http`：手工构造信封 + curl 请求（旧方式，CLI 不可用时用）
   - 客户端带 `tools`（函数调用）的请求自动走 `http` 通道：官方 CLI 有自己的工具层，无法接收客户端自定义函数定义
@@ -158,6 +159,7 @@ CMD_CODE_TOKEN=user_你的API密钥 python3 proxy.py
 ## 防封措施
 
 - **首选 `cli` 传输**：请求由官方 CLI 本体发出，指纹、协议版本、信封形状天然一致，无需伪造
+- `http` 信封按官方 CLI 1.88.5 的实时抓包结果对齐：`system` 为带 `cache_control` 的分段数组、`threadId`、`memory: null`、`permissionMode`、`max_tokens` 默认 64000、`user-agent: cli`、`x-taste-learning: true`、`traceparent`
 - `http` 传输下协议版本钉在 **1.53.1**（与实现的 wire 形状自洽）——"自称最新版却说旧方言"比版本旧更可疑；升级前先核对 CLI 包再 bump
 - 每 key 稳定会话 + `x-project-slug` 头，对齐真实 CLI 流量形态
 - 当请求不包含系统提示词时发送空格占位，避免上游注入约 7.5K token 的默认提示词（避免额外消耗额度）
