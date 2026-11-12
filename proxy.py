@@ -92,8 +92,8 @@ PROXY_KEY = os.environ.get("CMD_CODE_KEY", "").strip()
 # whose wire SHAPE we implement, self-consistent. Do NOT blindly track npm latest -
 # claiming a new version with an old dialect is more suspicious than an old version.
 # Bump only after re-aligning the envelope from the CLI bundle.
-VERSION = os.environ.get("CMD_CODE_VERSION", "1.53.1")
-PROJECT_SLUG = os.environ.get("CMD_CODE_PROJECT_SLUG", "cc-proxy")
+VERSION = os.environ.get("CMD_CODE_VERSION", "1.88.5")
+PROJECT_SLUG = os.environ.get("CMD_CODE_PROJECT_SLUG", "opt-cc-go-proxy-work")
 # model used when the client does not specify one (Go-plan default)
 DEFAULT_MODEL = os.environ.get("CMD_CODE_DEFAULT_MODEL", "z-ai/glm-5.3-flash")
 HOST = os.environ.get("CMD_CODE_HOST", "127.0.0.1")
@@ -103,7 +103,7 @@ DB_PATH = os.environ.get("CMD_CODE_DB") or os.path.join(
 CURL = os.environ.get("CMD_CODE_CURL") or (
     shutil.which("curl.exe") or shutil.which("curl") or "curl")
 
-APP_VERSION = "0.2.3"          # keep in sync with the latest GitHub Release tag
+APP_VERSION = "0.3.2"          # keep in sync with the latest GitHub Release tag
 
 # common shorthand -> canonical model ids (Go plan). Keeps clients that
 # send bare names like "glm-5.3-flash" from 404-ing upstream.
@@ -164,7 +164,12 @@ TRANSPORT = os.environ.get("CMD_CODE_TRANSPORT", "http").strip().lower()
 CLI_BIN = os.environ.get("CMD_CODE_CLI_BIN", "command-code")
 CLI_WORKDIR = os.environ.get("CMD_CODE_CLI_WORKDIR", ".")
 CLI_MAX_TURNS = int(os.environ.get("CMD_CODE_CLI_MAX_TURNS", "1"))
-if TRANSPORT == "cli" and "CMD_CODE_MAX_INFLIGHT" not in os.environ:
+CLI_SHARE = float(os.environ.get("CMD_CODE_CLI_SHARE", "0.15"))
+CLI_DAILY_TOKENS = int(os.environ.get("CMD_CODE_CLI_DAILY_TOKENS", "300000"))
+_cli_spend = {"day": "", "tok": 0, "ts": 0.0}
+ROUTE = {"used": "http"}
+
+if TRANSPORT in ("cli", "auto") and "CMD_CODE_MAX_INFLIGHT" not in os.environ:
     # each CLI run is a node process (~200 MB); keep the box alive
     MAX_INFLIGHT = 2
 
@@ -256,6 +261,9 @@ def _keyhash16(auth_header):
 _FP_USERS = ["dev", "alex", "chen", "marcus", "wei", "dmitri"]
 _FP_SLUGS = ["app", "api-server", "web-client", "cli-tools", "billing-worker"]
 _FP_BRANCHES = ["main", "master", "develop", "feat/api-v2"]
+_FP_COMMITS = ["chore: bump deps", "fix: handle empty response",
+               "feat: add retry helper", "refactor: split client module",
+               "test: cover edge cases"]
 
 
 def _device_profile(auth_header):
@@ -280,9 +288,9 @@ def _device_profile(auth_header):
         "isGitRepo": True,
         "currentBranch": branch,
         "mainBranch": "main",
-        "gitStatus": "",
-        "structure": [],
-        "recentCommits": [],
+        "gitStatus": "Working tree clean",
+        "structure": ["src", "package.json", "tsconfig.json", "README.md"],
+        "recentCommits": ["4f2a1c9 " + pick("commit", _FP_COMMITS)],
     }
 
 
@@ -354,11 +362,15 @@ def translate_body(openai_body, auth_header=""):
 
     # empty system -> single space placeholder: upstream otherwise injects its
     # own ~7.5K-token default prompt (MAXeaglet/commandcode-proxy issue #17)
+    _sys = "\n\n".join(p for p in system_parts if p) or " "
     params = {"model": openai_body.get("model", ""),
-              "system": "\n\n".join(p for p in system_parts if p) or " ",
+              # CLI 1.88.5 sends system as typed parts with an ephemeral cache
+              # breakpoint, not a bare string
+              "system": [{"type": "text", "text": _sys,
+                          "cache_control": {"type": "ephemeral"}}],
               "messages": msgs, "tools": tools,
               "max_tokens": openai_body.get("max_completion_tokens")
-              or openai_body.get("max_tokens") or 32000,
+              or openai_body.get("max_tokens") or 64000,
               "stream": True}
     if openai_body.get("temperature") is not None:
         params["temperature"] = openai_body["temperature"]
@@ -368,9 +380,11 @@ def translate_body(openai_body, auth_header=""):
     profile = _device_profile(auth_header)
     envelope = {
         "config": {**profile, "date": time.strftime("%Y-%m-%d"),
-                   "environment": "production"},
-        "memory": "", "taste": None, "skills": None,
-        "permissionMode": "standard", "params": params,
+                   "environment": "windows"},
+        "memory": None, "taste": None, "skills": None,
+        "permissionMode": "standard",
+        "threadId": _session_for(auth_header),
+        "params": params,
     }
     return envelope
 
@@ -413,6 +427,9 @@ def upstream_generate(envelope, session, auth_header):
            "-H", "x-command-code-version: " + VERSION,
            "-H", "x-project-slug: " + PROJECT_SLUG,
            "-H", "x-session-id: " + session,
+           "-H", "x-taste-learning: true",
+           "-A", "cli",
+           "-H", "traceparent: 00-" + uuid.uuid4().hex + "-" + uuid.uuid4().hex[:16] + "-01",
            "--data-binary", "@" + reqpath,
            "-o", "-",  # body -> stdout (we stream from the pipe)
            "--max-time", "600"] + _env_proxy_args()
@@ -775,7 +792,13 @@ class Recorder:
             input_tokens INTEGER, output_tokens INTEGER,
             cached_tokens INTEGER, reasoning_tokens INTEGER,
             cost_usd REAL, latency_ms INTEGER,
-            finish TEXT, error TEXT, client TEXT, session TEXT)""")
+            finish TEXT, error TEXT, client TEXT, session TEXT,
+            transport TEXT)""")
+        # migrate pre-v0.3 databases
+        try:
+            c.execute("ALTER TABLE usage ADD COLUMN transport TEXT")
+        except sqlite3.OperationalError:
+            pass
         c.execute("CREATE INDEX IF NOT EXISTS ix_usage_ts ON usage(ts)")
         c.execute("CREATE INDEX IF NOT EXISTS ix_usage_model ON usage(model)")
         return c
@@ -783,7 +806,7 @@ class Recorder:
     def record(self, **kw):
         cols = ("ts model status stream input_tokens output_tokens "
                 "cached_tokens reasoning_tokens cost_usd latency_ms finish "
-                "error client session").split()
+                "error client session transport").split()
         vals = [kw.get(c) for c in cols]
         vals[cols.index("model")] = _redact(str(vals[cols.index("model")] or ""))
         vals[cols.index("error")] = _redact(vals[cols.index("error")]) if vals[cols.index("error")] else None
@@ -871,10 +894,11 @@ class Recorder:
                 rows = c.execute(
                     "SELECT ts, model, status, stream, input_tokens, "
                     "output_tokens, cached_tokens, reasoning_tokens, "
-                    "cost_usd, latency_ms, finish, error, client "
+                    "cost_usd, latency_ms, finish, error, client, transport "
                     "FROM usage ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
                 c.close()
             return [{"ts": r[0], "model": r[1], "status": r[2],
+                     "transport": r[13],
                      "stream": bool(r[3]), "input": r[4] or 0,
                      "output": r[5] or 0, "cached": r[6] or 0,
                      "reasoning": r[7] or 0,
@@ -1021,7 +1045,7 @@ th.num,td.num{text-align:right;font-variant-numeric:tabular-nums}
 </tr></thead><tbody></tbody></table></div>
 <h2>最近请求</h2>
 <div class="card"><table id="recent"><thead><tr>
-<th>时间</th><th>模型</th><th>状态</th><th class="num">输入</th>
+<th>时间</th><th>模型</th><th>通道</th><th>状态</th><th class="num">输入</th>
 <th class="num">输出</th><th class="num">缓存</th><th class="num">推理</th>
 <th class="num">成本 USD</th><th class="num">延迟</th><th>错误</th>
 </tr></thead><tbody></tbody></table></div>
@@ -1103,14 +1127,15 @@ async function load(){
       const st=x.status<400?'<span class="st ok">✓ '+x.status+'</span>'
         :'<span class="st bad">✗ '+x.status+'</span>';
       return '<tr><td class="muted">'+d.toLocaleString('zh-CN',{hour12:false})+'</td>'+
-      '<td>'+esc(x.model)+'</td><td>'+st+'</td>'+
+      '<td>'+esc(x.model)+'</td>'+
+      '<td class="muted">'+(x.transport==='cli'?'CLI':'HTTP')+'</td><td>'+st+'</td>'+
       '<td class="num">'+fmtN(x.input)+'</td><td class="num">'+fmtN(x.output)+'</td>'+
       '<td class="num">'+fmtN(x.cached)+'</td><td class="num">'+fmtN(x.reasoning)+'</td>'+
       '<td class="num">'+fmtC(x.cost_usd)+'</td>'+
       '<td class="num muted">'+(x.latency_ms==null?'-':x.latency_ms+'ms')+'</td>'+
       '<td class="errtx" title="'+esc(x.error)+'">'+esc(x.error||'')+'</td>'+
       '</tr>'}).join('')
-      ||'<tr><td colspan="10" class="muted">暂无请求</td></tr>';
+      ||'<tr><td colspan="11" class="muted">暂无请求</td></tr>';
     $('#upd').textContent=new Date().toLocaleTimeString('zh-CN',{hour12:false});
   }catch(e){
     $('#dot').className='dot err';$('#sub').textContent='连接失败';
@@ -1155,6 +1180,53 @@ def _chain_first(first, gen):
     if first is not None:
         yield first
     yield from gen
+
+
+def _cli_tokens_today():
+    """Today's cli-transport token spend, cached for 60s."""
+    day = time.strftime("%Y-%m-%d")
+    now = time.time()
+    if _cli_spend["day"] == day and now - _cli_spend["ts"] < 60:
+        return _cli_spend["tok"]
+    tok = 0
+    try:
+        c = sqlite3.connect(DB_PATH, timeout=5)
+        start = time.mktime(time.strptime(day, "%Y-%m-%d"))
+        row = c.execute(
+            "SELECT COALESCE(SUM(COALESCE(input_tokens,0)+COALESCE(output_tokens,0)),0) "
+            "FROM usage WHERE transport='cli' AND ts>=?", (start,)).fetchone()
+        tok = int(row[0] or 0)
+        c.close()
+    except sqlite3.Error:
+        tok = 0
+    _cli_spend.update(day=day, tok=tok, ts=now)
+    return tok
+
+
+def pick_transport(body, auth_header):
+    """Decide per request: 'cli' (real CLI) or 'http' (hand-built envelope).
+
+    - requests carrying tools always go http (CLI cannot carry client tools)
+    - CMD_CODE_TRANSPORT=http / cli force one path
+    - auto: a deterministic share of tool-free requests, capped by daily tokens
+    """
+    if body.get("tools"):
+        return "http"
+    if TRANSPORT == "http":
+        return "http"
+    if TRANSPORT == "cli":
+        return "cli"
+    if CLI_SHARE <= 0:
+        return "http"
+    key = _keyhash16(auth_header) + "|" + "|".join(
+        str(m.get("role")) + ":" + _text_of(m.get("content"))[:120]
+        for m in (body.get("messages") or [])[-2:])
+    bucket = int(hashlib.sha256(key.encode()).hexdigest()[:8], 16) % 1000
+    if bucket >= int(CLI_SHARE * 1000):
+        return "http"
+    if CLI_DAILY_TOKENS > 0 and _cli_tokens_today() >= CLI_DAILY_TOKENS:
+        return "http"
+    return "cli"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1272,7 +1344,8 @@ class Handler(BaseHTTPRequestHandler):
                        cost_usd=cost,
                        latency_ms=int((time.monotonic() - started) * 1000),
                        finish=finish, error=(error or "")[:300] or None,
-                       client=client, session=session)
+                       client=client, session=session,
+                       transport=ROUTE["used"])
 
         try:
             n = int(self.headers.get("Content-Length") or 0)
@@ -1309,14 +1382,16 @@ class Handler(BaseHTTPRequestHandler):
                        cost_usd=cost,
                        latency_ms=int((time.monotonic() - started) * 1000),
                        finish=finish, error=(error or "")[:300] or None,
-                       client=client, session=session)
+                       client=client, session=session,
+                       transport=ROUTE["used"])
 
         try:
             # cli transport cannot carry client-defined tools (the official CLI
             # has its own tool layer), so tool-bearing requests fall back to the
             # http envelope path instead of silently dropping them.
-            use_cli = TRANSPORT == "cli" and not (body.get("tools") or [])
-            gen = (run_generate_cli(body, auth) if use_cli
+            route = pick_transport(body, auth)
+            ROUTE["used"] = route
+            gen = (run_generate_cli(body, auth) if route == "cli"
                    else run_generate(body, auth))
             if want_stream:
                 # PRIME the generator first: run_generate now resolves the
