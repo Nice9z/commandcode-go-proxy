@@ -103,7 +103,7 @@ DB_PATH = os.environ.get("CMD_CODE_DB") or os.path.join(
 CURL = os.environ.get("CMD_CODE_CURL") or (
     shutil.which("curl.exe") or shutil.which("curl") or "curl")
 
-APP_VERSION = "0.2.1"          # keep in sync with the latest GitHub Release tag
+APP_VERSION = "0.2.3"          # keep in sync with the latest GitHub Release tag
 
 # common shorthand -> canonical model ids (Go plan). Keeps clients that
 # send bare names like "glm-5.3-flash" from 404-ing upstream.
@@ -545,10 +545,10 @@ def run_generate_cli(openai_body, auth_header):
             if t == "result":
                 sub = ev.get("subtype")
                 u = ev.get("usage") or {}
-                usage = {"input_tokens": u.get("inputTokens"),
-                         "output_tokens": u.get("outputTokens"),
-                         "cached_tokens": u.get("cacheReadTokens"),
-                         "reasoning_tokens": u.get("reasoningTokens")}
+                usage = {"inputTokens": u.get("inputTokens"),
+                         "outputTokens": u.get("outputTokens"),
+                         "cachedInputTokens": u.get("cacheReadTokens"),
+                         "reasoningTokens": u.get("reasoningTokens")}
                 if sub != "success":
                     raise UpstreamError(_cli_error_status(ev.get("error") or ev),
                                         json.dumps(ev)[:500])
@@ -566,10 +566,10 @@ def run_generate_cli(openai_body, auth_header):
                 if r.get("finalText"):
                     final_text = r["finalText"]
                 u = r.get("usage") or {}
-                usage = {"input_tokens": u.get("inputTokens"),
-                         "output_tokens": u.get("outputTokens"),
-                         "cached_tokens": u.get("cacheReadTokens"),
-                         "reasoning_tokens": u.get("reasoningTokens")}
+                usage = {"inputTokens": u.get("inputTokens"),
+                         "outputTokens": u.get("outputTokens"),
+                         "cachedInputTokens": u.get("cacheReadTokens"),
+                         "reasoningTokens": u.get("reasoningTokens")}
                 continue
             text = e.get("delta") if isinstance(e.get("delta"), str) else None
             if text is None and isinstance(e.get("text"), str) and "delta" in et:
@@ -636,8 +636,9 @@ def run_generate(openai_body, auth_header):
         # errors (401/402/403/400) must raise before the client gets a 200,
         # otherwise the error would be injected into an open chunked stream
         # (downstream: illegal chunk header).
+        _lines = ndjson_lines(proc)
         _started = False
-        for _line in ndjson_lines(proc):
+        for _line in _lines:
             try:
                 _ev = json.loads(_line)
             except ValueError:
@@ -660,7 +661,6 @@ def run_generate(openai_body, auth_header):
             raise UpstreamError(502,
                                 "upstream ended without any data" +
                                 ("; curl: " + _stderr_txt if _stderr_txt else ""))
-        _skip_first = True
     except UpstreamError:
         try:
             if proc is not None and proc.poll() is None:
@@ -677,10 +677,7 @@ def run_generate(openai_body, auth_header):
             INFLIGHT["n"] = max(0, INFLIGHT["n"] - 1)
         raise
     try:
-        for line in ndjson_lines(proc):
-            if _skip_first:
-                _skip_first = False
-                continue
+        for line in _lines:
             try:
                 ev = json.loads(line)
             except ValueError:
