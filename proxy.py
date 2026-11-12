@@ -103,7 +103,7 @@ DB_PATH = os.environ.get("CMD_CODE_DB") or os.path.join(
 CURL = os.environ.get("CMD_CODE_CURL") or (
     shutil.which("curl.exe") or shutil.which("curl") or "curl")
 
-APP_VERSION = "0.1.1"          # keep in sync with the latest GitHub Release tag
+APP_VERSION = "0.1.2"          # keep in sync with the latest GitHub Release tag
 
 # common shorthand -> canonical model ids (Go plan). Keeps clients that
 # send bare names like "glm-5.3-flash" from 404-ing upstream.
@@ -469,7 +469,55 @@ def run_generate(openai_body, auth_header):
                 raise
             time.sleep(UPSTREAM_RETRY_BASE_MS / 1000.0 * (attempt + 1))
     try:
+        # resolve the FIRST event before yielding anything: pre-stream upstream
+        # errors (401/402/403/400) must raise before the client gets a 200,
+        # otherwise the error would be injected into an open chunked stream
+        # (downstream: illegal chunk header).
+        _started = False
+        for _line in ndjson_lines(proc):
+            try:
+                _ev = json.loads(_line)
+            except ValueError:
+                continue
+            _t = _ev.get("type")
+            if _t == "error" or ("error" in _ev and not _t):
+                _err = _ev.get("error") or _ev
+                raise UpstreamError(_status_from_error(_err),
+                                    json.dumps(_err)[:500])
+            _started = True
+            break
+        if not _started:
+            proc.wait(timeout=10)
+            _stderr_txt = ""
+            try:
+                with open(errpath, "r", encoding="utf-8", errors="replace") as f:
+                    _stderr_txt = f.read()[:300]
+            except OSError:
+                pass
+            raise UpstreamError(502,
+                                "upstream ended without any data" +
+                                ("; curl: " + _stderr_txt if _stderr_txt else ""))
+        _skip_first = True
+    except UpstreamError:
+        try:
+            if proc is not None and proc.poll() is None:
+                proc.kill()
+        except OSError:
+            pass
+        for _pth in (reqpath, errpath):
+            if _pth:
+                try:
+                    os.unlink(_pth)
+                except OSError:
+                    pass
+        with _INFLIGHT_LOCK:
+            INFLIGHT["n"] = max(0, INFLIGHT["n"] - 1)
+        raise
+    try:
         for line in ndjson_lines(proc):
+            if _skip_first:
+                _skip_first = False
+                continue
             try:
                 ev = json.loads(line)
             except ValueError:
@@ -942,6 +990,13 @@ function doLogin(){
 </body></html>"""
 
 
+def _chain_first(first, gen):
+    """Yield the already-consumed first item, then the rest of the stream."""
+    if first is not None:
+        yield first
+    yield from gen
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -1099,7 +1154,17 @@ class Handler(BaseHTTPRequestHandler):
         try:
             gen = run_generate(body, auth)
             if want_stream:
-                self._stream_response(gen, cid, created, model, _record)
+                # PRIME the generator first: run_generate now resolves the
+                # upstream's first event before yielding, so a pre-stream
+                # upstream error (401/402/...) raises HERE - before the 200 -
+                # and the except below can answer with a clean JSON error.
+                # Never send a second HTTP response into an open chunked body.
+                try:
+                    first = next(gen)
+                except StopIteration:
+                    first = ("done", {"toolcalls": {}, "usage": None,
+                                      "finish": "stop"})
+                self._stream_response(gen, first, cid, created, model, _record)
             else:
                 self._buffered_response(gen, cid, created, model, _record)
         except UpstreamBusy as e:
@@ -1146,7 +1211,7 @@ class Handler(BaseHTTPRequestHandler):
     def _sse(self, payload: dict):
         self._chunk(b"data: " + json.dumps(payload).encode() + b"\n\n")
 
-    def _stream_response(self, gen, cid, created, model, rec):
+    def _stream_response(self, gen, first, cid, created, model, rec):
         self._start_stream()
         base = {"id": cid, "object": "chat.completion.chunk",
                 "created": created, "model": model}
@@ -1154,7 +1219,7 @@ class Handler(BaseHTTPRequestHandler):
                    "delta": {"role": "assistant", "content": ""},
                    "finish_reason": None}]})
         final = None
-        for kind, item in gen:
+        for kind, item in _chain_first(first, gen):
             if kind == "text":
                 self._sse({**base, "choices": [{"index": 0,
                            "delta": {"content": item}, "finish_reason": None}]})
