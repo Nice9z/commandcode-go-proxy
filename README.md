@@ -135,6 +135,7 @@ CMD_CODE_TOKEN=user_你的API密钥 python3 proxy.py
 - 两种上游传输（部署时选择）：
   - `cli`（推荐）：直接驱动官方 Command Code CLI 的 headless 模式发请求。TLS 指纹、HTTP/2、headers、信封、会话生命周期全部由官方二进制产生，不伪造任何特征
   - `http`：手工构造信封 + curl 请求（旧方式，CLI 不可用时用）
+  - 客户端带 `tools`（函数调用）的请求自动走 `http` 通道：官方 CLI 有自己的工具层，无法接收客户端自定义函数定义
 - OpenAI 兼容：流式（SSE）/ 非流式、系统提示词、多模态图片（data URL）
 - 思考内容映射为 `reasoning_content`（DeepSeek 风格）
 - 中文看板：请求数、成功率、token 分布、缓存命中率、平均延迟，按模型汇总 + 最近请求明细，今天/24小时/7天/本月/上月/全部筛选，5 秒自动刷新，深浅色主题，移动端适配
