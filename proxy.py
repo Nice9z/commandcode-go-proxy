@@ -103,7 +103,7 @@ DB_PATH = os.environ.get("CMD_CODE_DB") or os.path.join(
 CURL = os.environ.get("CMD_CODE_CURL") or (
     shutil.which("curl.exe") or shutil.which("curl") or "curl")
 
-APP_VERSION = "0.2.0"          # keep in sync with the latest GitHub Release tag
+APP_VERSION = "0.2.1"          # keep in sync with the latest GitHub Release tag
 
 # common shorthand -> canonical model ids (Go plan). Keeps clients that
 # send bare names like "glm-5.3-flash" from 404-ing upstream.
@@ -1315,7 +1315,11 @@ class Handler(BaseHTTPRequestHandler):
                        client=client, session=session)
 
         try:
-            gen = (run_generate_cli(body, auth) if TRANSPORT == "cli"
+            # cli transport cannot carry client-defined tools (the official CLI
+            # has its own tool layer), so tool-bearing requests fall back to the
+            # http envelope path instead of silently dropping them.
+            use_cli = TRANSPORT == "cli" and not (body.get("tools") or [])
+            gen = (run_generate_cli(body, auth) if use_cli
                    else run_generate(body, auth))
             if want_stream:
                 # PRIME the generator first: run_generate now resolves the
