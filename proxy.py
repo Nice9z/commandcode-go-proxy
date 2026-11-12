@@ -103,7 +103,7 @@ DB_PATH = os.environ.get("CMD_CODE_DB") or os.path.join(
 CURL = os.environ.get("CMD_CODE_CURL") or (
     shutil.which("curl.exe") or shutil.which("curl") or "curl")
 
-APP_VERSION = "0.1.0"          # keep in sync with the latest GitHub Release tag
+APP_VERSION = "0.1.1"          # keep in sync with the latest GitHub Release tag
 
 # common shorthand -> canonical model ids (Go plan). Keeps clients that
 # send bare names like "glm-5.3-flash" from 404-ing upstream.
@@ -918,6 +918,16 @@ window.addEventListener('DOMContentLoaded',()=>{
     setTimeout(()=>document.getElementById('lkey').focus(),50);
   }else{load();}
 });
+document.getElementById('lkey').addEventListener('keydown',e=>{
+  if(e.key==='Enter')doLogin();});
+function doLogin(){
+  const k=document.getElementById('lkey').value.trim();
+  if(!k){document.getElementById('lerr').textContent='请输入网关密码';return;}
+  localStorage.setItem('cc_key',k);
+  document.getElementById('login').style.display='none';
+  document.getElementById('lerr').textContent='';
+  load();
+}
 </script>
 <div id="login" style="display:none">
   <div class="card">
