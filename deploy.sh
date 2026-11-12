@@ -120,9 +120,9 @@ if [ -f "$ENVF" ]; then
   ask "默认模型 [回车=不变，当前 $OLD_MODEL]: " DEFMODEL
   DEFMODEL=${DEFMODEL:-$OLD_MODEL}
 
-  # 上游传输：cli = 真 CLI 驱动（推荐），http = 手工信封 + curl
-  ask "上游传输 cli/http [回车=不变，当前 ${OLD_TRANSPORT:-http}]: " TRANSPORT
-  TRANSPORT=${TRANSPORT:-${OLD_TRANSPORT:-http}}
+  # 上游传输：auto = 按比例自动分配（推荐），cli = 全部走真 CLI，http = 全部手工信封
+  ask "上游传输 auto/cli/http [回车=不变，当前 ${OLD_TRANSPORT:-auto}]: " TRANSPORT
+  TRANSPORT=${TRANSPORT:-${OLD_TRANSPORT:-auto}}
 else
   echo "[*] 首次安装"
   TOKEN="${CMD_CODE_TOKEN:-}"
@@ -137,15 +137,16 @@ else
   fi
   ask "监听端口 [18787]: " PORT;  PORT=${PORT:-18787}
   ask "默认模型 [z-ai/glm-5.3-flash]: " DEFMODEL;  DEFMODEL=${DEFMODEL:-z-ai/glm-5.3-flash}
-  echo "  上游传输 cli = 由官方 CLI 发请求（TLS/HTTP2/信封全部原生，推荐）"
-  echo "            http = 手工构造信封 + curl（旧方式）"
-  ask "上游传输 cli/http [cli]: " TRANSPORT;  TRANSPORT=${TRANSPORT:-cli}
+  echo "  上游传输 auto = 大部分请求走手工信封（省额度），按比例抽一部分走官方 CLI（原生指纹）"
+  echo "            cli  = 全部由官方 CLI 发（最稳，但每请求约 19K token）"
+  echo "            http = 全部手工信封 + curl（最省，指纹是 curl 的）"
+  ask "上游传输 auto/cli/http [auto]: " TRANSPORT;  TRANSPORT=${TRANSPORT:-auto}
 fi
 
 # ---- 3.5 上游传输为 cli 时，安装官方 CLI ----
 CLI_BIN_PATH=""
 CLI_WORKDIR=""
-if [ "$TRANSPORT" = "cli" ]; then
+if [ "$TRANSPORT" = "cli" ] || [ "$TRANSPORT" = "auto" ]; then
   if ! command -v node >/dev/null; then
     echo "[*] 安装 Node.js..."
     if command -v apt-get >/dev/null; then
@@ -185,7 +186,9 @@ CMD_CODE_DB=$INSTALL_DIR/cc_proxy_usage.db
 CMD_CODE_TRANSPORT=$TRANSPORT
 CMD_CODE_CLI_BIN=${CLI_BIN_PATH:-command-code}
 CMD_CODE_CLI_WORKDIR=${CLI_WORKDIR:-$INSTALL_DIR}
-CMD_CODE_MAX_INFLIGHT=$([ "$TRANSPORT" = "cli" ] && echo 1 || echo 4)
+CMD_CODE_MAX_INFLIGHT=$([ "$TRANSPORT" = "http" ] && echo 4 || echo 2)
+CMD_CODE_CLI_SHARE=${CLI_SHARE:-0.15}
+CMD_CODE_CLI_DAILY_TOKENS=${CLI_DAILY_TOKENS:-300000}
 EOF
 umask 022
 
@@ -207,7 +210,7 @@ ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 ReadWritePaths=$INSTALL_DIR
-MemoryMax=$([ "$TRANSPORT" = "cli" ] && echo 800M || echo 512M)
+MemoryMax=$([ "$TRANSPORT" = "http" ] && echo 512M || echo 800M)
 
 [Install]
 WantedBy=multi-user.target
