@@ -92,6 +92,7 @@ if [ -f "$ENVF" ]; then
   OLD_KEY="$(grep -oE '^CMD_CODE_KEY=.*' "$ENVF" | cut -d= -f2-)"
   OLD_PORT="$(grep -oE '^CMD_CODE_PORT=.*' "$ENVF" | cut -d= -f2-)"
   OLD_MODEL="$(grep -oE '^CMD_CODE_DEFAULT_MODEL=.*' "$ENVF" | cut -d= -f2-)"
+  OLD_TRANSPORT="$(grep -oE '^CMD_CODE_TRANSPORT=.*' "$ENVF" | cut -d= -f2-)"
   echo "[*] 检测到已有配置"
 
   # API 密钥：回车=不变，其他=输入新密钥
@@ -118,6 +119,10 @@ if [ -f "$ENVF" ]; then
   # 默认模型：回车=不变，其他=新模型
   ask "默认模型 [回车=不变，当前 $OLD_MODEL]: " DEFMODEL
   DEFMODEL=${DEFMODEL:-$OLD_MODEL}
+
+  # 上游传输：cli = 真 CLI 驱动（推荐），http = 手工信封 + curl
+  ask "上游传输 cli/http [回车=不变，当前 ${OLD_TRANSPORT:-http}]: " TRANSPORT
+  TRANSPORT=${TRANSPORT:-${OLD_TRANSPORT:-http}}
 else
   echo "[*] 首次安装"
   TOKEN="${CMD_CODE_TOKEN:-}"
@@ -132,6 +137,39 @@ else
   fi
   ask "监听端口 [18787]: " PORT;  PORT=${PORT:-18787}
   ask "默认模型 [z-ai/glm-5.3-flash]: " DEFMODEL;  DEFMODEL=${DEFMODEL:-z-ai/glm-5.3-flash}
+  echo "  上游传输 cli = 由官方 CLI 发请求（TLS/HTTP2/信封全部原生，推荐）"
+  echo "            http = 手工构造信封 + curl（旧方式）"
+  ask "上游传输 cli/http [cli]: " TRANSPORT;  TRANSPORT=${TRANSPORT:-cli}
+fi
+
+# ---- 3.5 上游传输为 cli 时，安装官方 CLI ----
+CLI_BIN_PATH=""
+CLI_WORKDIR=""
+if [ "$TRANSPORT" = "cli" ]; then
+  if ! command -v node >/dev/null; then
+    echo "[*] 安装 Node.js..."
+    if command -v apt-get >/dev/null; then
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs npm 2>/dev/null \
+        || { curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs; }
+    else
+      echo "请先安装 Node.js 18+ 后重试"; exit 1
+    fi
+  fi
+  if ! command -v command-code >/dev/null; then
+    echo "[*] 安装 Command Code CLI..."
+    npm i -g command-code@latest --no-fund --no-audit
+  fi
+  CLI_BIN_PATH="$(command -v command-code)"
+  CLI_WORKDIR="$INSTALL_DIR/work"
+  mkdir -p "$CLI_WORKDIR"
+  ( cd "$CLI_WORKDIR"
+    git init -q 2>/dev/null || true
+    git config user.email dev@local 2>/dev/null || true
+    git config user.name dev 2>/dev/null || true
+    [ -f README.md ] || echo "# workspace" > README.md
+    git add -A 2>/dev/null || true
+    git commit -qm init 2>/dev/null || true )
+  echo "[*] CLI: $CLI_BIN_PATH ($($CLI_BIN_PATH --version 2>/dev/null || echo '?'))"
 fi
 
 # ---- 4. 环境文件 (0600) ----
@@ -144,6 +182,10 @@ CMD_CODE_HOST=0.0.0.0
 CMD_CODE_PORT=$PORT
 CMD_CODE_DEFAULT_MODEL=$DEFMODEL
 CMD_CODE_DB=$INSTALL_DIR/cc_proxy_usage.db
+CMD_CODE_TRANSPORT=$TRANSPORT
+CMD_CODE_CLI_BIN=${CLI_BIN_PATH:-command-code}
+CMD_CODE_CLI_WORKDIR=${CLI_WORKDIR:-$INSTALL_DIR}
+CMD_CODE_MAX_INFLIGHT=$([ "$TRANSPORT" = "cli" ] && echo 1 || echo 4)
 EOF
 umask 022
 
@@ -165,7 +207,7 @@ ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 ReadWritePaths=$INSTALL_DIR
-MemoryMax=512M
+MemoryMax=$([ "$TRANSPORT" = "cli" ] && echo 800M || echo 512M)
 
 [Install]
 WantedBy=multi-user.target
