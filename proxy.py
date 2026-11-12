@@ -103,7 +103,7 @@ DB_PATH = os.environ.get("CMD_CODE_DB") or os.path.join(
 CURL = os.environ.get("CMD_CODE_CURL") or (
     shutil.which("curl.exe") or shutil.which("curl") or "curl")
 
-APP_VERSION = "0.1.2"          # keep in sync with the latest GitHub Release tag
+APP_VERSION = "0.2.0"          # keep in sync with the latest GitHub Release tag
 
 # common shorthand -> canonical model ids (Go plan). Keeps clients that
 # send bare names like "glm-5.3-flash" from 404-ing upstream.
@@ -154,6 +154,19 @@ UPSTREAM_RETRY_MAX = int(os.environ.get("CMD_CODE_UPSTREAM_RETRY_MAX", "2"))
 UPSTREAM_RETRY_BASE_MS = int(os.environ.get("CMD_CODE_UPSTREAM_RETRY_BASE_MS", "400"))
 MAX_INFLIGHT = int(os.environ.get("CMD_CODE_MAX_INFLIGHT", "4"))
 SESSION_TTL_S = 12 * 3600
+
+# upstream transport:
+#   http = hand-built envelope + curl  (original path)
+#   cli  = drive the official command-code CLI in headless mode.
+#          Every byte upstream is produced by the real CLI binary: native TLS
+#          fingerprint, HTTP/2, headers, envelope, session lifecycle, version.
+TRANSPORT = os.environ.get("CMD_CODE_TRANSPORT", "http").strip().lower()
+CLI_BIN = os.environ.get("CMD_CODE_CLI_BIN", "command-code")
+CLI_WORKDIR = os.environ.get("CMD_CODE_CLI_WORKDIR", ".")
+CLI_MAX_TURNS = int(os.environ.get("CMD_CODE_CLI_MAX_TURNS", "1"))
+if TRANSPORT == "cli" and "CMD_CODE_MAX_INFLIGHT" not in os.environ:
+    # each CLI run is a node process (~200 MB); keep the box alive
+    MAX_INFLIGHT = 2
 
 HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
        "te", "trailers", "transfer-encoding", "upgrade", "host",
@@ -444,6 +457,156 @@ def _status_from_error(err):
     if "bad_request" in s or "validation" in s or "expected" in s:
         return 400
     return 502
+
+
+def _cli_prompt(messages):
+    """Flatten an OpenAI message list into one CLI prompt (headless is one-shot)."""
+    parts = []
+    for m in messages or []:
+        role = (m.get("role") or "user").strip()
+        text = _text_of(m.get("content"))
+        if not text:
+            continue
+        if role == "system":
+            parts.append("System instructions: " + text)
+        elif role == "assistant":
+            parts.append("Assistant (previous turn): " + text)
+        elif role == "tool":
+            parts.append("Tool result: " + text)
+        else:
+            parts.append("User: " + text)
+    parts.append("Reply as the assistant to the last user message above. "
+                 "Answer directly, no preamble.")
+    return "\n\n".join(parts)
+
+
+def cli_generate(model, prompt, token):
+    """Run the official CLI in headless JSON mode; return (proc, sample_path)."""
+    with _INFLIGHT_LOCK:
+        if MAX_INFLIGHT > 0 and INFLIGHT["n"] >= MAX_INFLIGHT:
+            raise UpstreamBusy("in-flight limit reached (%d)" % MAX_INFLIGHT)
+        INFLIGHT["n"] += 1
+    fd, sample_path = tempfile.mkstemp(suffix=".txt")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(prompt)
+    env = dict(os.environ)
+    env["COMMAND_CODE_API_KEY"] = token
+    env["COMMANDCODE_SKIP_UPDATES"] = "1"
+    env.pop("CMD_CODE_TRANSPORT", None)
+    cmd = [CLI_BIN, "-p", prompt,
+           "--output-format", "json",
+           "--model", model,
+           "--max-turns", str(CLI_MAX_TURNS),
+           "--skip-onboarding", "--no-auto-update", "--no-session"]
+    log("upstream(cli) ->", CLI_BIN, "model=" + model)
+    try:
+        # binary pipes: ndjson_lines() consumes bytes
+        proc = subprocess.Popen(cmd, cwd=CLI_WORKDIR, env=env,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE)
+    except OSError:
+        with _INFLIGHT_LOCK:
+            INFLIGHT["n"] = max(0, INFLIGHT["n"] - 1)
+        try:
+            os.unlink(sample_path)
+        except OSError:
+            pass
+        raise
+    return proc, sample_path
+
+
+def _cli_error_status(err):
+    s = json.dumps(err).lower() if not isinstance(err, str) else err.lower()
+    for code in (401, 402, 403, 429, 400, 404):
+        if str(code) in s:
+            return code
+    if "auth" in s:
+        return 401
+    return 502
+
+
+def run_generate_cli(openai_body, auth_header):
+    """Same event contract as run_generate(), but the upstream is the real CLI."""
+    model = canonical_model(openai_body.get("model"))
+    token = os.environ.get("CMD_CODE_TOKEN", "").strip()
+    if not token:
+        raise UpstreamError(401, "server token not set (CMD_CODE_TOKEN)")
+    prompt = _cli_prompt(openai_body.get("messages") or [])
+    proc, sample_path = cli_generate(model, prompt, token)
+    sent_any = False
+    usage, final_text, finish = None, "", "stop"
+    try:
+        for line in ndjson_lines(proc):
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            t = ev.get("type")
+            if t == "result":
+                sub = ev.get("subtype")
+                u = ev.get("usage") or {}
+                usage = {"input_tokens": u.get("inputTokens"),
+                         "output_tokens": u.get("outputTokens"),
+                         "cached_tokens": u.get("cacheReadTokens"),
+                         "reasoning_tokens": u.get("reasoningTokens")}
+                if sub != "success":
+                    raise UpstreamError(_cli_error_status(ev.get("error") or ev),
+                                        json.dumps(ev)[:500])
+                final_text = ev.get("finalText") or ""
+                break
+            if t != "event":
+                continue
+            e = ev.get("event") or {}
+            et = e.get("type") or ""
+            if "error" in et:
+                err = e.get("error") or e
+                raise UpstreamError(_cli_error_status(err), json.dumps(err)[:500])
+            if et == "run_end":
+                r = e.get("result") or {}
+                if r.get("finalText"):
+                    final_text = r["finalText"]
+                u = r.get("usage") or {}
+                usage = {"input_tokens": u.get("inputTokens"),
+                         "output_tokens": u.get("outputTokens"),
+                         "cached_tokens": u.get("cacheReadTokens"),
+                         "reasoning_tokens": u.get("reasoningTokens")}
+                continue
+            text = e.get("delta") if isinstance(e.get("delta"), str) else None
+            if text is None and isinstance(e.get("text"), str) and "delta" in et:
+                text = e["text"]
+            if not text:
+                continue
+            if "reasoning" in et or "thinking" in et:
+                sent_any = True
+                yield ("reasoning", text)
+            elif "text" in et or "content" in et or "message" in et:
+                sent_any = True
+                yield ("text", text)
+        proc.wait(timeout=30)
+        if not sent_any and final_text:
+            yield ("text", final_text)
+            sent_any = True
+        err_txt = ""
+        if proc.returncode not in (0, 8):
+            try:
+                err_txt = (proc.stderr.read() or b"").decode(errors="replace")[:300]
+            except OSError:
+                err_txt = ""
+        yield ("done", {"toolcalls": {}, "usage": usage,
+                        "finish": finish,
+                        "cost": None, "error": err_txt or None})
+    finally:
+        try:
+            if proc.poll() is None:
+                proc.kill()
+        except OSError:
+            pass
+        try:
+            os.unlink(sample_path)
+        except OSError:
+            pass
+        with _INFLIGHT_LOCK:
+            INFLIGHT["n"] = max(0, INFLIGHT["n"] - 1)
 
 
 def run_generate(openai_body, auth_header):
@@ -1080,7 +1243,7 @@ class Handler(BaseHTTPRequestHandler):
                     db_ok = False
                 self._json(200, {"ok": True, "upstream": UPSTREAM,
                                  "version_header": VERSION,
-                                 "app_version": APP_VERSION,
+                                 "app_version": APP_VERSION, "transport": TRANSPORT,
                                  "latest_version": latest_github_version(),
                                  "token_set": bool(TOKEN),
                                  "gateway_key_required": bool(PROXY_KEY),
@@ -1152,7 +1315,8 @@ class Handler(BaseHTTPRequestHandler):
                        client=client, session=session)
 
         try:
-            gen = run_generate(body, auth)
+            gen = (run_generate_cli(body, auth) if TRANSPORT == "cli"
+                   else run_generate(body, auth))
             if want_stream:
                 # PRIME the generator first: run_generate now resolves the
                 # upstream's first event before yielding, so a pre-stream
