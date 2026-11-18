@@ -103,7 +103,7 @@ DB_PATH = os.environ.get("CMD_CODE_DB") or os.path.join(
 CURL = os.environ.get("CMD_CODE_CURL") or (
     shutil.which("curl.exe") or shutil.which("curl") or "curl")
 
-APP_VERSION = "0.3.2"          # keep in sync with the latest GitHub Release tag
+APP_VERSION = "0.3.3"          # keep in sync with the latest GitHub Release tag
 
 # common shorthand -> canonical model ids (Go plan). Keeps clients that
 # send bare names like "glm-5.3-flash" from 404-ing upstream.
@@ -170,8 +170,10 @@ _cli_spend = {"day": "", "tok": 0, "ts": 0.0}
 ROUTE = {"used": "http"}
 
 if TRANSPORT in ("cli", "auto") and "CMD_CODE_MAX_INFLIGHT" not in os.environ:
-    # each CLI run is a node process (~200 MB); keep the box alive
-    MAX_INFLIGHT = 2
+    MAX_INFLIGHT = 4
+# cli slots: each run is a node process (~200 MB), so this stays small and
+# never blocks http requests - they have their own counter
+CLI_MAX_INFLIGHT = int(os.environ.get("CMD_CODE_CLI_MAX_INFLIGHT", "1"))
 
 HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
        "te", "trailers", "transfer-encoding", "upgrade", "host",
@@ -400,7 +402,8 @@ class UpstreamBusy(Exception):
     pass
 
 
-INFLIGHT = {"n": 0}
+INFLIGHT = {"n": 0}          # http (curl) slots
+CLI_INFLIGHT = {"n": 0}      # cli (node process) slots - separate, smaller
 _INFLIGHT_LOCK = threading.Lock()
 
 
@@ -409,10 +412,17 @@ def upstream_generate(envelope, session, auth_header):
     the gateway's Cloudflare bot check; python-urllib gets 403 error 1010).
     Returns (proc, req_tmp_path, err_tmp_path); NDJSON body on stdout.
     Raises UpstreamBusy when the global in-flight cap is reached."""
-    with _INFLIGHT_LOCK:
-        if MAX_INFLIGHT > 0 and INFLIGHT["n"] >= MAX_INFLIGHT:
+    # wait briefly for a slot instead of failing the client outright: a burst of
+    # 2-3 requests from one client is normal, a 503 is not
+    deadline = time.monotonic() + 5.0
+    while True:
+        with _INFLIGHT_LOCK:
+            if MAX_INFLIGHT <= 0 or INFLIGHT["n"] < MAX_INFLIGHT:
+                INFLIGHT["n"] += 1
+                break
+        if time.monotonic() >= deadline:
             raise UpstreamBusy("in-flight limit reached (%d)" % MAX_INFLIGHT)
-        INFLIGHT["n"] += 1
+        time.sleep(0.1)
     url = UPSTREAM + "/alpha/generate"
     fd, reqpath = tempfile.mkstemp(suffix=".json")
     with os.fdopen(fd, "wb") as f:
@@ -500,9 +510,9 @@ def _cli_prompt(messages):
 def cli_generate(model, prompt, token):
     """Run the official CLI in headless JSON mode; return (proc, sample_path)."""
     with _INFLIGHT_LOCK:
-        if MAX_INFLIGHT > 0 and INFLIGHT["n"] >= MAX_INFLIGHT:
-            raise UpstreamBusy("in-flight limit reached (%d)" % MAX_INFLIGHT)
-        INFLIGHT["n"] += 1
+        if CLI_MAX_INFLIGHT > 0 and CLI_INFLIGHT["n"] >= CLI_MAX_INFLIGHT:
+            raise UpstreamBusy("cli slot busy (%d)" % CLI_MAX_INFLIGHT)
+        CLI_INFLIGHT["n"] += 1
     fd, sample_path = tempfile.mkstemp(suffix=".txt")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(prompt)
@@ -523,7 +533,7 @@ def cli_generate(model, prompt, token):
                                 stderr=subprocess.PIPE)
     except OSError:
         with _INFLIGHT_LOCK:
-            INFLIGHT["n"] = max(0, INFLIGHT["n"] - 1)
+            CLI_INFLIGHT["n"] = max(0, CLI_INFLIGHT["n"] - 1)
         try:
             os.unlink(sample_path)
         except OSError:
@@ -623,7 +633,7 @@ def run_generate_cli(openai_body, auth_header):
         except OSError:
             pass
         with _INFLIGHT_LOCK:
-            INFLIGHT["n"] = max(0, INFLIGHT["n"] - 1)
+            CLI_INFLIGHT["n"] = max(0, CLI_INFLIGHT["n"] - 1)
 
 
 def run_generate(openai_body, auth_header):
@@ -1226,6 +1236,9 @@ def pick_transport(body, auth_header):
         return "http"
     if CLI_DAILY_TOKENS > 0 and _cli_tokens_today() >= CLI_DAILY_TOKENS:
         return "http"
+    with _INFLIGHT_LOCK:
+        if CLI_MAX_INFLIGHT > 0 and CLI_INFLIGHT["n"] >= CLI_MAX_INFLIGHT:
+            return "http"
     return "cli"
 
 
